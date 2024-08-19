@@ -1,6 +1,10 @@
 ---
 title: "Hands-on Exercise 1"
 author: "Ooi Wen Xian"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
 ---
 
 # 1.0 Overview
