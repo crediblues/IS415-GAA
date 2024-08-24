@@ -1,6 +1,8 @@
 ---
 title: "Hands-on Exercise 2"
 author: "Ooi Wen Xian"
+date: "August 23, 2024"
+date-modified: "last-modified"
 execute: 
   eval: true
   echo: true
