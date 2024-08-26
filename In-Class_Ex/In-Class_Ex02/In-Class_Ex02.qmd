@@ -1,0 +1,75 @@
+---
+title: "In-Class Exercise 2"
+author: "Ooi Wen Xian"
+date: "August 26, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+---
+
+# 1.0 Importing geospatial data
+
+Data is extracted from this source:
+
+Master Plan 2014 Subzone Boundary (Web) (i.e. MP14_SUBZONE_WEB_PL) in ESRI shapefile format. It can be downloaded at data.gov.sg. This is a geospatial data. It consists of the geographical boundary of Singapore at the planning subzone level. The data is based on URA Master Plan 2014.
+
+```{r}
+pacman::p_load(sf, tmap, tidyverse)
+```
+
+## 1.1 Importing the shapefile
+
+```{r}
+mpsz_shp <- st_read(dsn = "C:/wamp64/www/crediblues/IS415-GAA/In-Class_Ex/In-Class_Ex02/data", layer = "MP14_SUBZONE_WEB_PL")
+```
+Checking class of mpsz_shp
+```{r}
+class(mpsz_shp)
+```
+## 1.2 Importing the kml file
+
+```{r}
+mpsz_kml <- st_write(mpsz_shp, "C:/wamp64/www/crediblues/IS415-GAA/In-Class_Ex/In-Class_Ex02/data/MP14_SUBZONE_WEB_PL.kml", delete_dsn = TRUE)
+```
+```{r}
+mpsz_kml
+```
+
+```{r}
+mpsz2019_kml <- st_read("C:/wamp64/www/crediblues/IS415-GAA/In-Class_Ex/In-Class_Ex02/data/mpsz-2019/MasterPlan2019SubzoneBoundaryNoSeaKML.kml")
+```
+```{r}
+mpsz2019_shp <- st_read(dsn = "C:/wamp64/www/crediblues/IS415-GAA/In-Class_Ex/In-Class_Ex02/data/mpsz-2019", layer="mpsz-2019") %>%
+  st_transform(crs=3414)
+
+```
+```{r}
+mpsz2019_shp <- st_read(dsn = "C:/wamp64/www/crediblues/IS415-GAA/In-Class_Ex/In-Class_Ex02/data/mpsz-2019", layer="mpsz-2019") %>%
+  st_transform(crs=3414)
+
+```
+
+```{r}
+preschool <- st_read(dsn = "C:/wamp64/www/crediblues/IS415-GAA/In-Class_Ex/In-Class_Ex02/data/PreSchoolsLocation.kml") 
+```
+
+```{r}
+st_crs(mpsz2019_shp)
+```
+
+```{r}
+popdata <- read.csv("C:/wamp64/www/crediblues/IS415-GAA/In-Class_Ex/In-Class_Ex02/data/respopagesextod2023.csv")
+```
+
+```{r}
+popdata2023 <- popdata %>%
+  group_by(PA, SZ, AG) %>%
+  summarise(`POP` = sum(`Pop`)) %>%
+  ungroup() %>%
+  pivot_wider(names_from=AG, 
+              values_from=POP)
+colnames(popdata2023)
+```
+
