@@ -21,6 +21,8 @@ website:
       - href: index.qmd
         text: Home
       - about.qmd
+      - icon: Linkedin
+        href: https://www.linkedin.com/in/wen-xian-ooi-584469233/
 
 format:
   html:
