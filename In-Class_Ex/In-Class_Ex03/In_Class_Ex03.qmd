@@ -37,5 +37,18 @@ sg_sf <- mpsz_sf %>%
 
 plot(sg_sf)
 ```
-
-
+# 4.0 Importing acled data
+Myammar has 2 different coordinate reference systems, hence we would be using one of them for this example.
+```{r}
+acled_sf <- read_csv("data/ACLED_Myanmar.csv") %>%
+  st_as_sf(coords=c("longitude", "latitude"),
+           crs=4326) %>%
+  st_transform(crs=32647) %>%
+  mutate(event_date = dmy(event_date))
+```
+```{r}
+tmap_mode('view')
+acled_sf %>% 
+  filter(year==2023 | event_type == 'Political violence') %>% tm_shape+tm_dots()
+tmap_mode('plot')
+```

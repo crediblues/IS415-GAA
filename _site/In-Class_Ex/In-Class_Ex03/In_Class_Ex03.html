@@ -149,8 +149,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     </a>
     <ul class="dropdown-menu" aria-labelledby="nav-menu-in-class-exercise">    
         <li>
-    <a class="dropdown-item" href="../../In-Class_Ex/In-Class_Ex01/In-Class_Ex01.html">
+    <a class="dropdown-item" href="../../In-Class_Ex/In-Class_Ex02/In-Class_Ex02.html">
  <span class="dropdown-text">In-Class Exercise 2</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="../../In-Class_Ex/In-Class_Ex03/In-Class_Ex03.html">
+ <span class="dropdown-text">In-Class Exercise 3</span></a>
   </li>  
     </ul>
   </li>
@@ -163,11 +167,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li class="nav-item">
     <a class="nav-link" href="../../about.html"> 
 <span class="menu-text">About</span></a>
-  </li>  
-  <li class="nav-item compact">
-    <a class="nav-link" href="https://www.linkedin.com/in/wen-xian-ooi-584469233/"> <i class="bi bi-Linkedin" role="img">
-</i> 
-<span class="menu-text"></span></a>
   </li>  
 </ul>
           </div> <!-- /navcollapse -->
@@ -188,6 +187,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#installing-maptools" id="toc-installing-maptools" class="nav-link active" data-scroll-target="#installing-maptools">1.0 Installing Maptools</a></li>
   <li><a href="#importing-geospatial-data" id="toc-importing-geospatial-data" class="nav-link" data-scroll-target="#importing-geospatial-data">2.0 Importing Geospatial Data</a></li>
   <li><a href="#creating-coastal-outline" id="toc-creating-coastal-outline" class="nav-link" data-scroll-target="#creating-coastal-outline">3.0 Creating Coastal Outline</a></li>
+  <li><a href="#importing-acled-data" id="toc-importing-acled-data" class="nav-link" data-scroll-target="#importing-acled-data">4.0 Importing acled data</a></li>
   </ul>
 </nav>
     </div>
@@ -246,10 +246,25 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 (as 'lib' is unspecified)</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
-<pre><code>package 'maptools' successfully unpacked and MD5 sums checked
-
+<pre><code>package 'maptools' successfully unpacked and MD5 sums checked</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: cannot remove prior installation of package 'maptools'</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in file.copy(savedcopy, lib, recursive = TRUE): problem copying
+C:\Users\admin'\AppData\Local\R\win-library\4.4\00LOCK\maptools\libs\x64\maptools.dll
+to
+C:\Users\admin'\AppData\Local\R\win-library\4.4\maptools\libs\x64\maptools.dll:
+Permission denied</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: restored 'maptools'</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
 The downloaded binary packages are in
-    C:\Users\admin'\AppData\Local\Temp\RtmpmSNj1y\downloaded_packages</code></pre>
+    C:\Users\admin'\AppData\Local\Temp\RtmpcftHeT\downloaded_packages</code></pre>
 </div>
 </div>
 </section>
@@ -257,7 +272,7 @@ The downloaded binary packages are in
 <h1>2.0 Importing Geospatial Data</h1>
 <p>In this section, st_read() of sf package will be used to import the three geospatial data sets mentioned in previous section into R environment.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>childcare_sf <span class="ot">&lt;-</span> <span class="fu">st_read</span>(<span class="st">"data/child-care-services-geojson.geojson"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>childcare_sf <span class="ot">&lt;-</span> <span class="fu">st_read</span>(<span class="st">"data/child-care-services-geojson.geojson"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>Reading layer `child-care-services-geojson' from data source 
   `C:\wamp64\www\crediblues\IS415-GAA\In-Class_Ex\In-Class_Ex03\data\child-care-services-geojson.geojson' 
@@ -271,8 +286,8 @@ Geodetic CRS:  WGS 84</code></pre>
 </div>
 </div>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>mpsz_sf <span class="ot">&lt;-</span> <span class="fu">st_read</span>(<span class="at">dsn =</span> <span class="st">"data"</span>, </span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>                <span class="at">layer =</span> <span class="st">"MP14_SUBZONE_WEB_PL"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>mpsz_sf <span class="ot">&lt;-</span> <span class="fu">st_read</span>(<span class="at">dsn =</span> <span class="st">"data"</span>, </span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>                <span class="at">layer =</span> <span class="st">"MP14_SUBZONE_WEB_PL"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>Reading layer `MP14_SUBZONE_WEB_PL' from data source 
   `C:\wamp64\www\crediblues\IS415-GAA\In-Class_Ex\In-Class_Ex03\data' 
@@ -288,16 +303,37 @@ Projected CRS: SVY21</code></pre>
 <section id="creating-coastal-outline" class="level1">
 <h1>3.0 Creating Coastal Outline</h1>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>sg_sf <span class="ot">&lt;-</span> mpsz_sf <span class="sc">%&gt;%</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">st_union</span>()</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(sg_sf)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>sg_sf <span class="ot">&lt;-</span> mpsz_sf <span class="sc">%&gt;%</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">st_union</span>()</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(sg_sf)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
 <p><img src="In_Class_Ex03_files/figure-html/unnamed-chunk-5-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
+</div>
+</div>
+</section>
+<section id="importing-acled-data" class="level1">
+<h1>4.0 Importing acled data</h1>
+<p>Myammar has 2 different coordinate reference systems, hence we would be using one of them for this example.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>acled_sf <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="st">"data/ACLED_Myanmar.csv"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">st_as_sf</span>(<span class="at">coords=</span><span class="fu">c</span>(<span class="st">"longitude"</span>, <span class="st">"latitude"</span>),</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>           <span class="at">crs=</span><span class="dv">4326</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">st_transform</span>(<span class="at">crs=</span><span class="dv">32647</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">event_date =</span> <span class="fu">dmy</span>(event_date))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Rows: 55574 Columns: 31
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+chr (20): event_id_cnty, event_date, disorder_type, event_type, sub_event_ty...
+dbl (11): year, time_precision, inter1, inter2, interaction, iso, latitude, ...
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
 </div>
 </div>
 
