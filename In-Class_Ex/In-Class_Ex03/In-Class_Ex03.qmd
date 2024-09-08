@@ -1,0 +1,61 @@
+---
+title: "In-Class Exercise 3"
+subtitle: "Spatial Analysis and Point Methods"
+author: "Ooi Wen Xian"
+date: "September 2, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+  cache: true
+---
+Edit 8/9: Fixed navigation issues
+
+```{r}
+pacman::p_load(arrow,lubridate,tidyverse,tmap,sf)
+```
+# 1.0 Installing Maptools
+
+maptools is retired and binary is removed from CRAN. We can download it from Posit Public Package Manager
+
+```
+install.packages("maptools", repos = "https://packagemanager.posit.co/cran/2023-10-13")
+```
+# 2.0 Importing Geospatial Data
+
+In this section, st_read() of sf package will be used to import the three geospatial data sets mentioned in previous section into R environment.
+```{r}
+childcare_sf <- st_read("data/child-care-services-geojson.geojson")
+```
+```{r}
+mpsz_sf <- st_read(dsn = "data", 
+                layer = "MP14_SUBZONE_WEB_PL")
+```
+# 3.0 Creating Coastal Outline
+
+```{r}
+sg_sf <- mpsz_sf %>%
+  st_union()
+
+plot(sg_sf)
+```
+# 4.0 Importing acled data
+
+Myammar has 2 different coordinate reference systems, hence we would be using one of them for this example.
+
+```{r}
+acled_sf <- read_csv("data/ACLED_Myanmar.csv") %>%
+  st_as_sf(coords=c("longitude", "latitude"),
+           crs=4326) %>%
+  st_transform(crs=32647) %>%
+  mutate(event_date = dmy(event_date))
+```
+```{r}
+tmap_mode('plot')  
+# Used plot mode for faster rendering, as file took too long to render with interactive map
+acled_sf %>% 
+  filter(year == 2023 | event_type == 'Political violence') %>% 
+  tm_shape() + tm_dots()
+tmap_mode('plot')
+```
