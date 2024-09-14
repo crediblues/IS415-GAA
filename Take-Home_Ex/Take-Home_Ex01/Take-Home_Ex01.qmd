@@ -39,6 +39,7 @@ In terms of study period, I would be focusing on quarterly armed conflict events
 -   [Geospatial data](http://geonode.themimu.info/layers/?limit=100&offset=0) on [Myanmar Information Management Unit, MIMU](http://www.themimu.info/)
 
 # 2.0 Set-up
+
 ## Importing R packages
 
 The following packages are used for this study:
@@ -51,25 +52,32 @@ The following packages are used for this study:
 
 -   tmap, to create thematic maps
 
+-   tidyverse,
+
+-   lubridate,
+
 ```{r}
 pacman::p_load(sp, sf, raster, spatstat, tmap, tidyverse, lubridate)
 ```
 
 ## Data Preprocessing
+
 ### Armed conflict data
+
 ```{r}
 # Load the armed conflict data
 conflict_data <- read_csv("data/raw/2021-01-01-2024-06-30-Southeast_Asia-Myanmar.csv")
 ```
+
 Convert armed conflict data to sf format
+
 ```{r}
 conflict_data
 ```
+
 Myanmar falls within UTM Zone 47N and UTM Zone 48N.
 
-For most parts of central and western Myanmar, UTM Zone 47N (EPSG: 32647) is used.
-For the eastern regions, UTM Zone 48N (EPSG: 32648) is used.
-Since the data spans across the entire country, I would be using EPSG: 32647 (UTM Zone 47N).
+For most parts of central and western Myanmar, UTM Zone 47N (EPSG: 32647) is used. For the eastern regions, UTM Zone 48N (EPSG: 32648) is used. Since the data spans across the entire country, I would be using EPSG: 32647 (UTM Zone 47N).
 
 ```{r}
 # CRS 4326 is for WGS84 (used in GPS)
@@ -82,13 +90,66 @@ conflict_sf <- st_as_sf(conflict_data,
 ```{r}
 conflict_sf
 ```
+
 ```{r}
 st_geometry(conflict_sf)
 ```
-Looking at the attributes of conflict_sf, event_date is in chr format. We shall convert event_date to a date format.
+
+Looking at the attributes of conflict_sf, there are 3 issues with attributes.
+
+1.  event_date is in chr format. We shall convert event_date to a date format.
+
+2.  Timestamps are in the number of seconds that have passed since the Unix Epoch, we shall convert them to weekdays, hours and days format that can be utilised for further analysis
 
 ```{r}
 conflict_sf$event_date <- as.Date(conflict_sf$event_date, format = "%d %B %Y")
+conflict_sf$timestamp <- as_datetime(conflict_sf$timestamp, tz = "Asia/Yangon")
+head(conflict_sf)
+```
+
+After dealing with the date and timestamps, we can now drop columns that we would not be using as they do not provide significant value for the geospatial or spatio-temporal analysis:
+
+1.  time_precision: Provides an indicator of how precise the event date is, but is not essential as we working with actual dates (event_date).
+
+2.  disorder_type: May provide some background, but redundant since we already have the event_type and sub_event_type.
+
+3.  assoc_actor_1, assoc_actor_2: We would not be focusing on assoc_actors
+
+4.  civilian_targeting: Redundant with event_type.
+
+5.  iso: ISO country code (since we are only dealing with Myanmar, this could be dropped).
+
+6.  region, country: dropped as they all refer to Myanmar and Southeast Asia, as this is already implied.
+
+7.  source, source_scale: Information about the data source is generally not needed for analysis, unless we doing source-specific analysis.
+
+8.  inter1, inter2: Code summarizing the interaction between actors, redundant asv we are already using actor1 and actor2.
+
+9. tags: not useful as we are not analyzing event metadata
+
+10.  notes: Detailed event notes, which may not be essential for the quantitative aspects of the analysis.
+
+Summary of Key Columns to Keep:
+event_id_cnty, event_date, year, disorder_type, event_type, sub_event_type, actor1, actor2, interaction, admin1, admin2, admin3, location, geo_precision, fatalities, timestamp, geometry.
+
+```{r}
+conflict_sf <- conflict_sf %>%
+  select(-time_precision, -disorder_type, -assoc_actor_1, -assoc_actor_2, 
+         -civilian_targeting, -iso, -region, -country, -source, 
+         -source_scale, -inter1, -inter2, -tags, -notes)
+summary(conflict_sf)
+```
+We would also extract quarters from the conflict data
+```{r}
+conflict_sf <- conflict_sf %>%
+  mutate(quarter = quarter(event_date, with_year = TRUE),
+         year = year(event_date),
+         quarter_year = paste(year, quarter, sep = " Q"))
+```
+```{r}
+selected_event_types <- c("Battles", "Explosion/Remote violence", "Strategic developments", "Violence against civilians")
+conflict_sf_filtered <- conflict_sf %>%
+  filter(event_type %in% selected_event_types)
 ```
 
 ### Geospatial Data
@@ -98,9 +159,16 @@ conflict_sf$event_date <- as.Date(conflict_sf$event_date, format = "%d %B %Y")
 admin_boundaries_sf <- st_read(dsn = "data/raw",
                          layer = "mmr_polbnda2_adm1_250k_mimu_1") # MIMU boundary data
 ```
+
 ```{r}
 admin_boundaries_sf <- st_transform(admin_boundaries_sf, 32647)
 admin_boundaries_sf
+```
+Upon further research into the attributes of admin_boundaries, ST_MMR is a string combination of ST and ST_RG. Hence, we can drop ST_MMR.
+```{r}
+admin_boundaries_sf <- admin_boundaries_sf %>%
+  select(-ST_MMR)
+summary(admin_boundaries_sf)
 ```
 ```{r}
 st_crs(admin_boundaries_sf)
@@ -109,36 +177,146 @@ st_crs(admin_boundaries_sf)
 ```{r}
 plot(admin_boundaries_sf)
 ```
+
 ```{r}
 plot(st_geometry(admin_boundaries_sf))
 ```
+
 ```{r}
 tmap_mode("plot")
 qtm(admin_boundaries_sf)+tm_shape(conflict_sf)+tm_dots()
 ```
-```{r}
-tmap_mode("plot")
-```
 
 ## Preparation for Spatial Point Analysis
-### Converting sf data frames to sp’s Spatial* class
-Using as_Spatial() of sf package to convert the data from simple feature data frame to sp’s Spatial* class.
+
+### Converting sf data frames to sp’s Spatial\* class
+
+Before we convert sf data frames to sp’s Spatial\* class, we would need to split the conflict data quarterly for our quarterly KDE layers later on.
+```{r}
+quarterly_conflict_sf <- split(conflict_sf_filtered, conflict_sf_filtered$quarter)
+```
+
+To convert each quarter's data to ppp format, we can write a function to do so.
+```{r}
+convert_sf_to_ppp <- function(sf_data) {
+  conflict_asp <- as_Spatial(sf_data)
+  conflict_sp <- as(conflict_asp, "SpatialPoints")
+  conflict_ppp <- as.ppp(st_coordinates(conflict_sf_filtered), st_bbox(conflict_sf_filtered))
+  return(conflict_ppp)
+}
+
+quarterly_ppp <- lapply(quarterly_conflict_sf, convert_sf_to_ppp)
+```
+Noticing that we have duplicates in the data, we would have to handle these duplicates. In spatial point patterns analysis, an issue of significant is the presence of duplicates. The statistical methodology used for spatial point patterns processes is based largely on the assumption that process are simple, that is, that the points cannot be coincident.
+
+We would do the following steps:
+1.   Check for the number of duplicates for each conflict_ppp.
+
+2.   Using the multiplicity() function, we would count the number of locations that have more than 1 conflict
+
+3.   To resolve the duplicate issue, we would use jittering, which will add a small perturbation to the duplicate points so that they do not occupy the exact same space.
+
+```{r}
+handle_duplicates <- function(ppp_obj) {
+  # Check for any duplicates
+  if(any(duplicated(ppp_obj))) {
+    cat("Warning: data contain duplicated points\n")
+    
+    # Count the number of duplicated locations
+    num_duplicates <- sum(multiplicity(ppp_obj) > 1)
+    cat("Number of locations with duplicates:", num_duplicates, "\n")
+    
+    # Apply jittering to resolve duplicates
+    ppp_jit <- rjitter(ppp_obj, retry=TRUE, nsim=1, drop=TRUE)
+    if(any(duplicated(ppp_jit))) {
+      cat("Jittering still leaves some duplicates.\n")
+    } else {
+      cat("Duplicates resolved after jittering.\n")
+    }
+    
+    return(ppp_jit)
+  } else {
+    cat("No duplicates found.\n")
+    return(ppp_obj)
+  }
+}
+
+quarterly_ppp <- lapply(quarterly_ppp, handle_duplicates)
+```
+We can see the details of a ppp objects in quarterly_ppp as shown below. Quarter '2021.2' is used as an example.
+```{r}
+summary(quarterly_ppp[[1]])
+```
+Let's convert our admin_boundaries sf dataframe to ppp objects as well.
+
 ```{r}
 admin_boundaries_asp <- as_Spatial(admin_boundaries_sf)
-conflict_asp <- as_Spatial(conflict_sf)
-```
-
-Let's view the content
-```{r}
-admin_boundaries_asp
-```
-```{r}
-conflict_sf_asp
-```
-### Converting the Spatial* class into generic sp format
-spatstat requires the analytical data in ppp object form. Hence, We need to convert the Spatial classes* into Spatial object first.
-```{r}
 admin_boundaries_sp <- as(admin_boundaries_asp, "SpatialPolygons")
-conflict_sp <- as(conflict_asp, "SpatialPoints")
 ```
 
+The analysis with a geographical area like Myanmar boundary. In spatstat, an object called owin is specially designed to represent this polygonal region. The owin object can be displayed below.
+
+```{r}
+admin_boundary_owin <- as.owin(admin_boundaries_sf)
+plot(admin_boundary_owin)
+```
+
+```{r}
+summary(admin_boundary_owin)
+```
+
+In the last step of geospatial data wrangling, we would extract conflict events that are located within Myanmar.
+```{r}
+extract_ppp_within_boundary <- function(ppp_object, boundary) {
+  filtered_ppp <- ppp_object[boundary]
+  return(filtered_ppp)
+}
+
+# Apply the function to each ppp object in the list
+quarterly_ppp_mmr <- lapply(quarterly_ppp, extract_ppp_within_boundary, boundary = admin_boundary_owin)
+
+# Check summaries for each filtered ppp object
+lapply(quarterly_ppp_mmr, summary)
+
+```
+```{r}
+plot_ppp_object <- function(ppp_object) {
+  plot(ppp_object)
+}
+par(mar = c(4, 4, 2, 1))
+
+plot_list <- lapply(seq_along(quarterly_ppp_mmr), function(i) {
+  plot_ppp_object(quarterly_ppp_mmr[[i]])
+})
+```
+
+# 3.0 First-order Spatial Point Patterns Analysis
+
+## Kernel Density Estimation
+### Automatic bandwidth selection
+The method is diggle, smoothing kernel is gaussian and edge bias correction is enabled.
+```{r}
+kde_quarterly_ppp_mmr_bw <- lapply(quarterly_ppp_mmr, function(ppp_object) {
+  density(ppp_object, 
+          sigma=bw.diggle,  # Bandwidth parameter
+          edge=TRUE,        # Edge bias correction
+          kernel="gaussian" # Gaussian kernel
+          )
+})
+for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
+  plot(kde_quarterly_ppp_mmr_bw[[i]], main = paste("KDE Plot for Quarter", i))
+}
+```
+In the above plot, the plot is too small and the values are low and difficult to interpret.
+```{r}
+kde_quarterly_ppp_mmr1_ppl <- density(quarterly_ppp_mmr[[1]], 
+                               sigma=bw.ppl, 
+                               edge=TRUE,
+                               kernel="gaussian")
+
+plot(kde_quarterly_ppp_mmr1_ppl, main = "bw.ppl")
+```
+
+```{r}
+
+```
