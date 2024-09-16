@@ -57,7 +57,7 @@ The following packages are used for this study:
 -   lubridate,
 
 ```{r}
-pacman::p_load(sp, sf, raster, spatstat, tmap, tidyverse, lubridate)
+pacman::p_load(png, sp, sf, raster, spatstat, tmap, tidyverse, lubridate)
 ```
 
 ## Data Preprocessing
@@ -65,6 +65,8 @@ pacman::p_load(sp, sf, raster, spatstat, tmap, tidyverse, lubridate)
 ### Armed conflict data
 
 ```{r}
+#| eval: false
+
 # Load the armed conflict data
 conflict_data <- read_csv("data/raw/2021-01-01-2024-06-30-Southeast_Asia-Myanmar.csv")
 ```
@@ -307,16 +309,117 @@ for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
   plot(kde_quarterly_ppp_mmr_bw[[i]], main = paste("KDE Plot for Quarter", i))
 }
 ```
-In the above plot, the plot is too small and the values are low and difficult to interpret.
+Density values are too small to understand. Let's try increasing the bandwidth for a better visualisation.
 ```{r}
-kde_quarterly_ppp_mmr1_ppl <- density(quarterly_ppp_mmr[[1]], 
-                               sigma=bw.ppl, 
-                               edge=TRUE,
-                               kernel="gaussian")
-
-plot(kde_quarterly_ppp_mmr1_ppl, main = "bw.ppl")
+for (i in 1:length(quarterly_ppp_mmr)) {
+  quarterly_ppp_mmr[[i]] <- rescale.ppp(quarterly_ppp_mmr[[i]], 1000, "km")
+}
+```
+```{r}
+sig <- 15.0
+kde_quarterly_ppp_mmr_bw <- lapply(quarterly_ppp_mmr, function(ppp_object) {
+  density(ppp_object, 
+          sigma=sig,  # Bandwidth parameter
+          edge=TRUE,        # Edge bias correction
+          kernel="gaussian" # Gaussian kernel
+          )
+})
+```
+```{r}
+for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
+  plot(kde_quarterly_ppp_mmr_bw[[i]], main = paste("KDE Plot for Quarter", i))
+}
 ```
 
-```{r}
+# 4.0 Second-order Spatial Point Patterns Analysis
+Due to the large amount of conflict data, we would be focusing on high density areas for our second-order spatial point patterns analysis. 
+From the previous KDE plots, we can derive that the states/regions with high density are:
 
+States: Shan (North), Kayah, Kachin
+
+Regions: Sagaing, Magway, Mandalay, Shan (North), Chin
+
+We would need to derive the ppp objects again to be specific for these states/regions.
+
+Filter sf Data for Specific Regions/States
+```{r}
+# Filter Data for Specific Regions/States
+regions_states <- c("Shan (North)", "Kayah", "Kachin", "Sagaing", "Magway", "Mandalay", "Chin")
+
+# Filter quarterly data to include only the specified regions and states
+filter_conflict_data <- function(sf_data) {
+  sf_data %>%
+    filter(admin1 %in% regions_states | admin2 %in% regions_states)
+}
+
+# Apply filtering to each quarter in the list
+filtered_quarterly_sf <- lapply(quarterly_conflict_sf, filter_conflict_data)
 ```
+Convert sf to ppp
+```{r}
+filtered_quarterly_ppp <- lapply(filtered_quarterly_sf, convert_sf_to_ppp)
+```
+```{r}
+filtered_quarterly_ppp <- lapply(filtered_quarterly_ppp, handle_duplicates)
+```
+## Analysing Spatial Point Process Using G-Function
+### Computing F-Function Estimation
+
+We would be using F function to estimate the empty space function F(r) or its hazard rate h(r) from a point pattern in a window of arbitrary shape. 
+
+F function measures the distribution of distances from a typical point to the nearest observed point.
+F function is also computationally inexpensive compared to K, L, G functions because it only considers the distances from a set of test points to the nearest event.
+
+From the spatstat package, we would be using Fest() and envelope() for F function estimation and monte carlo simulation test respectively.
+```{r}
+F_quarterly_ppp_mmr <- lapply(filtered_quarterly_ppp, function(ppp_object) {
+  Fest(ppp_object)
+})
+```
+```{r}
+for (i in 1:length(F_quarterly_ppp_mmr)) {
+  plot(F_quarterly_ppp_mmr[[i]], main = paste("F Function for Quarter", i))
+}
+```
+
+### Performing Complete Spatial Randomness Test
+To confirm the observed spatial patterns above, a hypothesis test will be conducted. The hypothesis and test are as follows:
+
+Ho = The distribution of armed conflict events in Myanmar is randomly distributed.
+
+H1= The distribution of armed conflict events in Myanmar is not randomly distributed.
+
+The null hypothesis will be rejected if p-value is smaller than alpha value of 0.001.
+
+A Monte Carlo test will be employed using the F-function to compare the observed spatial pattern with a simulated pattern under the assumption of complete spatial randomness (CSR). By comparing the observed F-function to the distribution of simulated F-functions, we can assess whether the pattern deviates from randomness.
+
+```{r}
+set.seed(123) # For reproducibility
+F_quarterly_ppp_mmr_envelope <- lapply(filtered_quarterly_ppp, function(ppp_object) {
+  envelope(ppp_object, Fest, nsim = 200)
+})
+```
+```{r}
+for (i in 1:length(F_quarterly_ppp_mmr_envelope)) {
+  plot(F_quarterly_ppp_mmr_envelope[[i]], main = paste("F Function csr for Quarter", i))
+}
+```
+
+# 5.0 Spatio-Temporal Point Patterns Analysis
+spattemp.density() of sparr package is used to compute STKDE.
+
+Before that, we need to create a new owin object.
+```
+filtered_quarterly_owin <- lapply(filtered_quarterly_ppp, function(ppp_object) {
+  ppp_object[admin_boundary_owin]
+})
+
+# Summary of each subsetted ppp object
+lapply(filtered_quarterly_owin, summary)
+```
+```
+plot(filtered_quarterly_owin[[3]])
+```
+## Computing Spatio-temporal KDE
+spattemp.density() of sparr package is used to compute the STKDE.
+

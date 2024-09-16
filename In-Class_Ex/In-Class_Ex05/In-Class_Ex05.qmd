@@ -1,0 +1,81 @@
+---
+title: "In-Class Exercise 5"
+author: "Ooi Wen Xian"
+date: "September 16, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+---
+# Loading the package
+```{r}
+pacman::p_load(sf, spdep, tidyverse, tmap, knitr, GWmodel)
+```
+# Importing packages
+```{r}
+#| eval: false
+hunan <- st_read(dsn = "data/geospatial", 
+                 layer = "Hunan")
+```
+
+```{r}
+#| eval: false
+hunan2012 <- read_csv("data/aspatial/Hunan_2012.csv")
+```
+```{r}
+#| eval: false
+
+hunan_sf <- left_join(hunan,hunan2012)%>%
+  select(1:4, 7, 15)
+```
+```{r}
+#| eval: false
+
+write_rds(hunan_sf, "data/rds/hunan_sf.rds")
+```
+```{r}
+hunan_sf <- read_rds("data/rds/hunan_sf.rds")
+```
+
+# Geographically Weighted Summary Statistics with adaptive bandwidth
+```{r}
+hunan_sp <- hunan_sf %>% as_Spatial()
+```
+
+```{r}
+bw_AIC <- bw.gwr(GDPPC ~ 1, data = hunan_sp, approach="AIC", adaptive = TRUE, kernel = "bisquare", longlat = T)
+# longlat = T: to know that your coord pairs are in lat long, this package would transform to great circle transformation, its in KM
+
+```
+```{r}
+bw_CV <- bw.gwr(GDPPC ~ 1, data = hunan_sp, approach="CV", adaptive = TRUE, kernel = "bisquare", longlat = T)
+```
+Using fixed distance/bandwidth
+```{r}
+bw_CV_fixed <- bw.gwr(GDPPC ~ 1, data = hunan_sp, approach="CV", adaptive = FALSE, kernel = "bisquare", longlat = T)
+```
+
+```{r}
+gwstat <- gwss(data = hunan_sp, vars = "GDPPC", bw = bw_AIC, kernel = "bisquare", adaptive = TRUE, longlat = T)
+```
+```{r}
+gwstat_df <- as.data.frame(gwstat$SDF)
+# you cannot have a sort/filter code in between these 2 code because the sequence would change
+hunan_gstat <- cbind(hunan_sf, gwstat_df)
+```
+
+```{r}
+tm_shape(hunan_gstat) +
+  tm_fill("GDPPC_LM",
+          n=5,style = "quantile") +
+  tm_borders(alpha = 0.5)+
+  tm_layout(main.title = "Distribution of geographically weighted mean",
+            main.title.size = 2.0,
+            main.title.position = "center",
+            legend.text.size = 1.2,
+            legend.height = 1.5,
+            legend.width = 1.5,
+            frame = TRUE)
+```
+
