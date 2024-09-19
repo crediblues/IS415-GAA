@@ -57,7 +57,7 @@ The following packages are used for this study:
 -   lubridate,
 
 ```{r}
-pacman::p_load(png, sp, sf, raster, spatstat, tmap, tidyverse, lubridate)
+pacman::p_load(png, sp, sf, raster, spatstat, tmap, tmaptools, tidyverse, lubridate, sparr, osmdata)
 ```
 
 ## Data Preprocessing
@@ -65,8 +65,6 @@ pacman::p_load(png, sp, sf, raster, spatstat, tmap, tidyverse, lubridate)
 ### Armed conflict data
 
 ```{r}
-#| eval: false
-
 # Load the armed conflict data
 conflict_data <- read_csv("data/raw/2021-01-01-2024-06-30-Southeast_Asia-Myanmar.csv")
 ```
@@ -337,19 +335,20 @@ From the previous KDE plots, we can derive that the states/regions with high den
 
 States: Shan (North), Kayah, Kachin
 
-Regions: Sagaing, Magway, Mandalay, Shan (North), Chin
+Regions: Sagaing, Magway, Mandalay, Shan (North), Chin, Yangon
 
 We would need to derive the ppp objects again to be specific for these states/regions.
 
 Filter sf Data for Specific Regions/States
 ```{r}
 # Filter Data for Specific Regions/States
-regions_states <- c("Shan (North)", "Kayah", "Kachin", "Sagaing", "Magway", "Mandalay", "Chin")
+regions_states <- c("Shan (North)", "Kayah", "Kachin", "Sagaing", "Magway", "Mandalay", "Chin", "Yangon")
 
 # Filter quarterly data to include only the specified regions and states
+# Acled data knowledge base indicates admin 1 as the largest sub-national administrative region in which the event took place. Hence we would focus on admin 1 events.
 filter_conflict_data <- function(sf_data) {
   sf_data %>%
-    filter(admin1 %in% regions_states | admin2 %in% regions_states)
+    filter(admin1 %in% regions_states)
 }
 
 # Apply filtering to each quarter in the list
@@ -362,7 +361,10 @@ filtered_quarterly_ppp <- lapply(filtered_quarterly_sf, convert_sf_to_ppp)
 ```{r}
 filtered_quarterly_ppp <- lapply(filtered_quarterly_ppp, handle_duplicates)
 ```
-## Analysing Spatial Point Process Using G-Function
+```{r}
+summary(filtered_quarterly_ppp[[1]])
+```
+## Analysing Spatial Point Process Using F-Function
 ### Computing F-Function Estimation
 
 We would be using F function to estimate the empty space function F(r) or its hazard rate h(r) from a point pattern in a window of arbitrary shape. 
@@ -396,7 +398,7 @@ A Monte Carlo test will be employed using the F-function to compare the observed
 ```{r}
 set.seed(123) # For reproducibility
 F_quarterly_ppp_mmr_envelope <- lapply(filtered_quarterly_ppp, function(ppp_object) {
-  envelope(ppp_object, Fest, nsim = 200)
+  envelope(ppp_object, Fest, nsim = 99)
 })
 ```
 ```{r}
@@ -408,18 +410,150 @@ for (i in 1:length(F_quarterly_ppp_mmr_envelope)) {
 # 5.0 Spatio-Temporal Point Patterns Analysis
 spattemp.density() of sparr package is used to compute STKDE.
 
-Before that, we need to create a new owin object.
+```{r}
+filtered_quarterly_sf_combined <- bind_rows(filtered_quarterly_sf, .id = "quarter_year")
 ```
-filtered_quarterly_owin <- lapply(filtered_quarterly_ppp, function(ppp_object) {
-  ppp_object[admin_boundary_owin]
-})
+```{r}
+tmap_mode('plot')
+tm_shape(admin_boundaries_sf)+
+  tm_polygons() +
+tm_shape(filtered_quarterly_sf_combined) +
+  tm_dots(size = 0.1) +
+tm_facets(by="quarter_year", 
+            free.coords=FALSE, 
+            drop.units = TRUE)
+```
+To do Spatio Temporal Analysis, we need to add in the mark for the ppp objects. We would first convert the event_date to numeric forms.
+```{r}
+  filtered_quarterly_sf_combined <- filtered_quarterly_sf_combined %>% select(quarter) %>%
+  mutate(quarter_num = dense_rank(quarter))
+```
+```{r}
+filtered_quarterly_sf_combined <- filtered_quarterly_sf_combined %>% select(quarter_num)
+```
 
-# Summary of each subsetted ppp object
-lapply(filtered_quarterly_owin, summary)
+```{r}
+filtered_quarterly_sf_combined_quarter_ppp <- as.ppp(filtered_quarterly_sf_combined)
+filtered_quarterly_sf_combined_quarter_ppp
 ```
+```{r}
+summary(filtered_quarterly_sf_combined_quarter_ppp)
 ```
-plot(filtered_quarterly_owin[[3]])
+```{r}
+any(duplicated(filtered_quarterly_sf_combined_quarter_ppp))
 ```
+```{r}
+filtered_quarterly_sf_combined_quarter_ppp <- handle_duplicates(filtered_quarterly_sf_combined_quarter_ppp)
+```
+```{r}
+filtered_quarterly_sf_combined_quarter_owin <- filtered_quarterly_sf_combined_quarter_ppp[admin_boundary_owin]
+summary(filtered_quarterly_sf_combined_quarter_owin)
+```
+
+```{r}
+plot(filtered_quarterly_sf_combined_quarter_owin, main = paste("filtered_quarterly_owin"))
+```
+
 ## Computing Spatio-temporal KDE
 spattemp.density() of sparr package is used to compute the STKDE.
+```{r}
+st_kde <- spattemp.density(filtered_quarterly_sf_combined_quarter_owin)
+```
+```{r}
+summary(st_kde)
+```
+```{r}
+plot(st_kde)
+```
+# 6.0 Second-order Spatio-temporal Point Patterns Analysis
+## Analysing Spatial Point Process Using F-Function
+### Computing F-Function Estimation
+
+We would be using F function to estimate the empty space function F(r) or its hazard rate h(r) from a point pattern in a window of arbitrary shape. 
+
+F function measures the distribution of distances from a typical point to the nearest observed point.
+F function is also computationally inexpensive compared to K, L, G functions because it only considers the distances from a set of test points to the nearest event.
+
+From the spatstat package, we would be using Fest() and envelope() for F function estimation and monte carlo simulation test respectively.
+```{r}
+F_st = Fest(filtered_quarterly_sf_combined_quarter_owin)
+plot(F_st)
+```
+### Performing Complete Spatial Randomness Test
+To confirm the observed spatial patterns above, a hypothesis test will be conducted. The hypothesis and test are as follows:
+
+Ho = The distribution of armed conflict events in Myanmar is randomly distributed.
+
+H1= The distribution of armed conflict events in Myanmar is not randomly distributed.
+
+The null hypothesis will be rejected if p-value is smaller than alpha value of 0.001.
+
+A Monte Carlo test will be employed using the F-function to compare the observed spatial pattern with a simulated pattern under the assumption of complete spatial randomness (CSR). By comparing the observed F-function to the distribution of simulated F-functions, we can assess whether the pattern deviates from randomness.
+
+```{r}
+set.seed(123) # For reproducibility
+F_st.csr <- envelope(filtered_quarterly_sf_combined_quarter_owin, Fest, nsim = 99)
+```
+```{r}
+plot(F_st.csr)
+```
+# 7.0 Displaying the KDE and Spatio-temporal KDE layers on openstreetmap of Myanmar.
+Before we plot the KDE and Spatio-temporal KDE layers, we need to convert the KDE and spatio-temporal KDE layers to a format suitable for tmap. 
+
+Converting KDE to raster
+```{r}
+kde_raster_list = list()
+for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
+  kde_raster_list[[i]] <- raster(kde_quarterly_ppp_mmr_bw[[i]])
+  projection(kde_raster_list[[i]]) <- CRS("+init=EPSG:32647")
+}
+```
+
+Converting Spatio-Temporal KDE to raster
+```{r}
+# Function to convert KDE to RasterLayer
+kde_to_raster <- function(kde_obj) {
+  # Convert the KDE object (im class) to a matrix
+  kde_matrix <- as.matrix(kde_obj)
+  
+  # Create a raster from the matrix
+  r <- raster(kde_matrix)
+  
+  # Set the extent of the raster to match the KDE object's extent
+  extent(r) <- extent(kde_obj$xrange[1], kde_obj$xrange[2], kde_obj$yrange[1], kde_obj$yrange[2])
+  
+  # Return the RasterLayer
+  return(r)
+}
+
+# Convert the list of KDE objects to RasterLayers
+kde_rasters <- lapply(kde_quarterly_ppp_mmr_bw, kde_to_raster)
+
+```
+
+
+## KDE layers on openstreetmap of Myanmar
+```{r}
+tmap_mode('plot')
+# Create a base map with OpenStreetMap
+for (i in seq_along(kde_raster_list)) {
+  map <- tm_shape(kde_raster_list[[i]]) +
+    tm_raster(palette = "viridis", title = "KDE") +
+    tm_basemap("OpenStreetMap")
+  print(map)
+}
+```
+
+## Spatio-temporal KDE layers on openstreetmap of Myanmar
+
+```{r}
+tmap_mode('plot')
+for (i in seq_along(kde_rasters)) {
+  tm <- tm_shape(kde_rasters[[i]]) +
+        tm_raster(palette = "viridis", title = paste("KDE for Quarter", i)) +
+        tm_basemap("OpenStreetMap")
+  
+  print(tm)
+}
+```
 
