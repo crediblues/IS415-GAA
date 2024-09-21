@@ -57,7 +57,7 @@ The following packages are used for this study:
 -   lubridate,
 
 ```{r}
-pacman::p_load(png, sp, sf, raster, spatstat, tmap, tmaptools, tidyverse, lubridate, sparr, osmdata)
+pacman::p_load(png, sp, sf, raster, spatstat, tmap, tmaptools, tidyverse, lubridate, sparr, knitr)
 ```
 
 ## Data Preprocessing
@@ -543,7 +543,7 @@ for (i in seq_along(kde_raster_list)) {
 ## Spatio-temporal KDE layers on openstreetmap of Myanmar
 
 ```{r}
-tmap_mode("plot")  # Switch to plotting mode
+tmap_mode("plot")  # Switch to plotting mode 
 
 # Loop through each time point's density image
 for (time_point in names(st_kde_raster_list)) {
