@@ -44,20 +44,24 @@ In terms of study period, I would be focusing on quarterly armed conflict events
 
 The following packages are used for this study:
 
--   sf, to import, manage and process vector-based geospatial data in R.
+-   **sf**, to import, manage and process vector-based geospatial data in R.
 
--   spatstat, to perform 1st- and 2nd-order spatial point patterns analysis and derive kernel density estimation (KDE) layer.
+-   **spatstat**, to perform 1st- and 2nd-order spatial point patterns analysis and derive kernel density estimation (KDE) layer.
 
--   raster, to convert image output generate by spatstat into raster format.
+-   **raster**, to convert image output generate by spatstat into raster format.
 
--   tmap, to create thematic maps
+-   **tmap**, to create thematic maps
 
--   tidyverse,
+-   **tidyverse**, includes packages like `dplyr` for data manipulation, `ggplot2` for data visualization
 
--   lubridate,
+-   **lubridate**, to parse, manipulate, and perform calculations with date-time objects
+
+-   **sparr**, to provide functions for statistical inference and hypothesis testing related to spatial point processes
+
+-   **knitr**, to allow R code to be embedded in R Markdown documents
 
 ```{r}
-pacman::p_load(png, sp, sf, raster, spatstat, tmap, tmaptools, tidyverse, lubridate, sparr, knitr)
+pacman::p_load(sp, sf, raster, spatstat, tmap, tidyverse, lubridate, sparr, knitr)
 ```
 
 ## Data Preprocessing
@@ -95,11 +99,11 @@ conflict_sf
 st_geometry(conflict_sf)
 ```
 
-Looking at the attributes of conflict_sf, there are 3 issues with attributes.
+Looking at the attributes of conflict_sf, there are 2 issues with attributes.
 
-1.  event_date is in chr format. We shall convert event_date to a date format.
+1.  **event_date** is in chr format. We shall convert event_date to a date format.
 
-2.  Timestamps are in the number of seconds that have passed since the Unix Epoch, we shall convert them to weekdays, hours and days format that can be utilised for further analysis
+2.  **timestamps** are in the number of seconds that have passed since the Unix Epoch, we shall convert them to weekdays, hours and days format that can be utilised for further analysis
 
 ```{r}
 conflict_sf$event_date <- as.Date(conflict_sf$event_date, format = "%d %B %Y")
@@ -107,7 +111,7 @@ conflict_sf$timestamp <- as_datetime(conflict_sf$timestamp, tz = "Asia/Yangon")
 head(conflict_sf)
 ```
 
-After dealing with the date and timestamps, we can now drop columns that we would not be using as they do not provide significant value for the geospatial or spatio-temporal analysis:
+After dealing with the date and timestamps, we can now drop these columns that we would not be using as they do not provide significant value for the geospatial or spatio-temporal analysis:
 
 1.  time_precision: Provides an indicator of how precise the event date is, but is not essential as we working with actual dates (event_date).
 
@@ -125,12 +129,11 @@ After dealing with the date and timestamps, we can now drop columns that we woul
 
 8.  inter1, inter2: Code summarizing the interaction between actors, redundant asv we are already using actor1 and actor2.
 
-9. tags: not useful as we are not analyzing event metadata
+9.  tags: not useful as we are not analyzing event metadata
 
-10.  notes: Detailed event notes, which may not be essential for the quantitative aspects of the analysis.
+10. notes: Detailed event notes, which may not be essential for the quantitative aspects of the analysis.
 
-Summary of Key Columns to Keep:
-event_id_cnty, event_date, year, disorder_type, event_type, sub_event_type, actor1, actor2, interaction, admin1, admin2, admin3, location, geo_precision, fatalities, timestamp, geometry.
+**Summary of Key Columns to Keep**: event_id_cnty, event_date, year, disorder_type, event_type, sub_event_type, actor1, actor2, interaction, admin1, admin2, admin3, location, geo_precision, fatalities, timestamp, geometry.
 
 ```{r}
 conflict_sf <- conflict_sf %>%
@@ -139,13 +142,16 @@ conflict_sf <- conflict_sf %>%
          -source_scale, -inter1, -inter2, -tags, -notes)
 summary(conflict_sf)
 ```
+
 We would also extract quarters from the conflict data
+
 ```{r}
 conflict_sf <- conflict_sf %>%
   mutate(quarter = quarter(event_date, with_year = TRUE),
          year = year(event_date),
          quarter_year = paste(year, quarter, sep = " Q"))
 ```
+
 ```{r}
 selected_event_types <- c("Battles", "Explosion/Remote violence", "Strategic developments", "Violence against civilians")
 conflict_sf_filtered <- conflict_sf %>%
@@ -164,12 +170,15 @@ admin_boundaries_sf <- st_read(dsn = "data/raw",
 admin_boundaries_sf <- st_transform(admin_boundaries_sf, 32647)
 admin_boundaries_sf
 ```
+
 Upon further research into the attributes of admin_boundaries, ST_MMR is a string combination of ST and ST_RG. Hence, we can drop ST_MMR.
+
 ```{r}
 admin_boundaries_sf <- admin_boundaries_sf %>%
   select(-ST_MMR)
 summary(admin_boundaries_sf)
 ```
+
 ```{r}
 st_crs(admin_boundaries_sf)
 ```
@@ -187,16 +196,20 @@ tmap_mode("plot")
 qtm(admin_boundaries_sf)+tm_shape(conflict_sf)+tm_dots()
 ```
 
+From the basic plot here, we can see some concentration of conflict data in central Myammar and some areas in the South.
+
 ## Preparation for Spatial Point Analysis
 
 ### Converting sf data frames to sp’s Spatial\* class
 
-Before we convert sf data frames to sp’s Spatial\* class, we would need to split the conflict data quarterly for our quarterly KDE layers later on.
+Before we convert sf data frames to sp’s Spatial\* class, we would need to split the conflict data quarterly for our quarterly KDE layers later on. This step is important for calculating the KDE layers that reflect the distribution of armed conflict over time.
+
 ```{r}
 quarterly_conflict_sf <- split(conflict_sf_filtered, conflict_sf_filtered$quarter)
 ```
 
 To convert each quarter's data to ppp format, we can write a function to do so.
+
 ```{r}
 convert_sf_to_ppp <- function(sf_data) {
   conflict_asp <- as_Spatial(sf_data)
@@ -207,14 +220,14 @@ convert_sf_to_ppp <- function(sf_data) {
 
 quarterly_ppp <- lapply(quarterly_conflict_sf, convert_sf_to_ppp)
 ```
+
 Noticing that we have duplicates in the data, we would have to handle these duplicates. In spatial point patterns analysis, an issue of significant is the presence of duplicates. The statistical methodology used for spatial point patterns processes is based largely on the assumption that process are simple, that is, that the points cannot be coincident.
 
-We would do the following steps:
-1.   Check for the number of duplicates for each conflict_ppp.
+We would do the following steps: 1. Check for the number of duplicates for each conflict_ppp.
 
-2.   Using the multiplicity() function, we would count the number of locations that have more than 1 conflict
+2.  Using the multiplicity() function, we would count the number of locations that have more than 1 conflict
 
-3.   To resolve the duplicate issue, we would use jittering, which will add a small perturbation to the duplicate points so that they do not occupy the exact same space.
+3.  To resolve the duplicate issue, we would use jittering, which will add a small perturbation to the duplicate points so that they do not occupy the exact same space.
 
 ```{r}
 handle_duplicates <- function(ppp_obj) {
@@ -243,10 +256,13 @@ handle_duplicates <- function(ppp_obj) {
 
 quarterly_ppp <- lapply(quarterly_ppp, handle_duplicates)
 ```
+
 We can see the details of a ppp objects in quarterly_ppp as shown below. Quarter '2021.2' is used as an example.
+
 ```{r}
 summary(quarterly_ppp[[1]])
 ```
+
 Let's convert our admin_boundaries sf dataframe to ppp objects as well.
 
 ```{r}
@@ -266,6 +282,7 @@ summary(admin_boundary_owin)
 ```
 
 In the last step of geospatial data wrangling, we would extract conflict events that are located within Myanmar.
+
 ```{r}
 extract_ppp_within_boundary <- function(ppp_object, boundary) {
   filtered_ppp <- ppp_object[boundary]
@@ -279,6 +296,7 @@ quarterly_ppp_mmr <- lapply(quarterly_ppp, extract_ppp_within_boundary, boundary
 lapply(quarterly_ppp_mmr, summary)
 
 ```
+
 ```{r}
 plot_ppp_object <- function(ppp_object) {
   plot(ppp_object)
@@ -293,8 +311,15 @@ plot_list <- lapply(seq_along(quarterly_ppp_mmr), function(i) {
 # 3.0 First-order Spatial Point Patterns Analysis
 
 ## Kernel Density Estimation
+
+By aggregating point data, KDE provides insights into patterns that may not be apparent from raw event counts.
+
 ### Automatic bandwidth selection
+
+There are many methods in determining the bandwidth type to use for kernel density. Let's experiment with a few before moving on.
+
 The method is diggle, smoothing kernel is gaussian and edge bias correction is enabled.
+
 ```{r}
 kde_quarterly_ppp_mmr_bw <- lapply(quarterly_ppp_mmr, function(ppp_object) {
   density(ppp_object, 
@@ -307,12 +332,15 @@ for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
   plot(kde_quarterly_ppp_mmr_bw[[i]], main = paste("KDE Plot for Quarter", i))
 }
 ```
+
 Density values are too small to understand. Let's try increasing the bandwidth for a better visualisation.
+
 ```{r}
 for (i in 1:length(quarterly_ppp_mmr)) {
   quarterly_ppp_mmr[[i]] <- rescale.ppp(quarterly_ppp_mmr[[i]], 1000, "km")
 }
 ```
+
 ```{r}
 sig <- 15.0
 kde_quarterly_ppp_mmr_bw <- lapply(quarterly_ppp_mmr, function(ppp_object) {
@@ -323,23 +351,44 @@ kde_quarterly_ppp_mmr_bw <- lapply(quarterly_ppp_mmr, function(ppp_object) {
           )
 })
 ```
+
 ```{r}
 for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
   plot(kde_quarterly_ppp_mmr_bw[[i]], main = paste("KDE Plot for Quarter", i))
 }
 ```
 
+**KDE Interpretations:**
+
+-   A significant cluster of high-density activity is visible in central Myanmar, likely covering regions such as **Sagaing**, **Mandalay**, and parts of **Magway**. These areas have seen intense conflict following the military coup of February 2021. The People's Defense Forces (PDFs) and ethnic armed groups have operated heavily in these regions, leading to sustained high-intensity violence.
+
+-   Surrounding the core high-density zones in central Myanmar are areas of moderate density. This pattern suggests that conflict or unrest is spreading beyond the immediate hotspots, impacting nearby regions. This spread is consistent with the escalating conflict across rural and semi-urban areas.
+
+-   There is a smaller concentration of moderate density in southern Myanmar, which may reflect some degree of unrest or resistance activities, but at a lower intensity compared to central Myanmar.
+
+-   A smaller but distinct high-density area is visible in the **Yangon** region, Myanmar’s largest city and its commercial capital.
+
+```{r}
+for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
+  plot(hist(kde_quarterly_ppp_mmr_bw[[i]]), main = paste("KDE Diggle for Quarter", i))
+}
+
+```
+
+Looking at the histograms, most pixel values are close to zero, suggesting that majority of the study area has low density. The peak at zero for the frequency of pixel values indicates a large portion of our spatial area has minimal or no activity. The histogram is heavily skewed towards the lower density values. A small number of pixels have higher density values (i.e., areas with significant clustering of events), but these are much less common compared to low-density areas. This suggests that there could be a few regions / states with significant spatial clustering compared to the rest.
+
 # 4.0 Second-order Spatial Point Patterns Analysis
-Due to the large amount of conflict data, we would be focusing on high density areas for our second-order spatial point patterns analysis. 
-From the previous KDE plots, we can derive that the states/regions with high density are:
+
+Due to the large amount of conflict data, we would be focusing on high density areas for our second-order spatial point patterns analysis. From the previous KDE plots, we can derive that the states/regions with high density are:
 
 States: Shan (North), Kayah, Kachin
 
-Regions: Sagaing, Magway, Mandalay, Shan (North), Chin, Yangon
+Regions: Sagaing, Magway, Mandalay, Chin, Yangon
 
 We would need to derive the ppp objects again to be specific for these states/regions.
 
 Filter sf Data for Specific Regions/States
+
 ```{r}
 # Filter Data for Specific Regions/States
 regions_states <- c("Shan (North)", "Kayah", "Kachin", "Sagaing", "Magway", "Mandalay", "Chin", "Yangon")
@@ -354,37 +403,59 @@ filter_conflict_data <- function(sf_data) {
 # Apply filtering to each quarter in the list
 filtered_quarterly_sf <- lapply(quarterly_conflict_sf, filter_conflict_data)
 ```
+
 Convert sf to ppp
+
 ```{r}
 filtered_quarterly_ppp <- lapply(filtered_quarterly_sf, convert_sf_to_ppp)
 ```
+
 ```{r}
 filtered_quarterly_ppp <- lapply(filtered_quarterly_ppp, handle_duplicates)
 ```
+
 ```{r}
 summary(filtered_quarterly_ppp[[1]])
 ```
+
 ## Analysing Spatial Point Process Using F-Function
+
 ### Computing F-Function Estimation
 
-We would be using F function to estimate the empty space function F(r) or its hazard rate h(r) from a point pattern in a window of arbitrary shape. 
+We would be using F function to estimate the empty space function F(r) or its hazard rate h(r) from a point pattern in a window of arbitrary shape.
 
 F function measures the distribution of distances from a typical point to the nearest observed point.
+
 F function is also computationally inexpensive compared to K, L, G functions because it only considers the distances from a set of test points to the nearest event.
 
 From the spatstat package, we would be using Fest() and envelope() for F function estimation and monte carlo simulation test respectively.
+
 ```{r}
 F_quarterly_ppp_mmr <- lapply(filtered_quarterly_ppp, function(ppp_object) {
   Fest(ppp_object)
 })
 ```
+
+**Curve Interpretations:**
+
+-   F^km(r) (black solid line): This is the Kaplan-Meier estimator for the F-function. It accounts for edge effects using survival analysis techniques, giving a more accurate estimation of the point pattern behavior near the boundaries of the window.
+
+-   F^bord(r) (red dashed line): This is the border-corrected estimator, which adjusts for the reduced influence of points near the edges of the study window.
+
+-   F^cs(r) (green dotted line): This is the Chiu-Stoyan estimator, which uses a different method of edge correction for the point pattern, possibly better suited for specific types of spatial point distributions.
+
+-   Fpois(r) (blue dash-dotted line): This is the theoretical F-function for a homogeneous Poisson process. It represents a completely spatially random (CSR) point pattern, where no clustering or regularity exists.
+
 ```{r}
 for (i in 1:length(F_quarterly_ppp_mmr)) {
   plot(F_quarterly_ppp_mmr[[i]], main = paste("F Function for Quarter", i))
 }
 ```
 
+In this case, as F\^km(r), F\^bord(r), F\^cs(r) lie below the Poisson line for small r, indicating that the points tend to be spaced apart more evenly than expected in a completely random pattern. The estimators converge towards 1 as r increases, which is expected because the probability of finding a point within a large distance will naturally approach 1 as the distance grows large. This implies points are distributed more regularly than expected under completely random Poisson distribution at smaller scales.
+
 ### Performing Complete Spatial Randomness Test
+
 To confirm the observed spatial patterns above, a hypothesis test will be conducted. The hypothesis and test are as follows:
 
 Ho = The distribution of armed conflict events in Myanmar is randomly distributed.
@@ -401,18 +472,31 @@ F_quarterly_ppp_mmr_envelope <- lapply(filtered_quarterly_ppp, function(ppp_obje
   envelope(ppp_object, Fest, nsim = 99)
 })
 ```
+
+**Curve Interpretations**
+
+-   F\^obs(r) (black solid line): This is the **observed F-function** for your point pattern (armed conflict events in Myanmar for Quarter 3). It represents the cumulative distribution of distances from random locations to the nearest point (conflict event).
+
+-   Ftheo(r) (red dashed line): This is the theoretical F-function for a completely random (Poisson) process. It serves as a baseline under the null hypothesis of CSR.
+
+-   F\^hi(r) and F\^low(r) (grey lines): These are the **upper and lower envelopes** from the Monte Carlo simulations. The envelope shows the range of F-functions generated from 99 simulations of a CSR point process. If the observed F-function lies outside this envelope, it suggests deviation from randomness.
+
 ```{r}
 for (i in 1:length(F_quarterly_ppp_mmr_envelope)) {
   plot(F_quarterly_ppp_mmr_envelope[[i]], main = paste("F Function csr for Quarter", i))
 }
 ```
 
+Observed F^obs(r) is below Ftheo(r), indicating points are more dispersed than expected under CSR. The spatial distribution of points significantly deviates from CSR as the F^obs(r) is below the envelope.
+
 # 5.0 Spatio-Temporal Point Patterns Analysis
+
 spattemp.density() of sparr package is used to compute STKDE.
 
 ```{r}
 filtered_quarterly_sf_combined <- bind_rows(filtered_quarterly_sf, .id = "quarter_year")
 ```
+
 ```{r}
 tmap_mode('plot')
 tm_shape(admin_boundaries_sf)+
@@ -423,11 +507,14 @@ tm_facets(by="quarter_year",
             free.coords=FALSE, 
             drop.units = TRUE)
 ```
+
 To do Spatio Temporal Analysis, we need to add in the mark for the ppp objects. We would first convert the event_date to numeric forms.
+
 ```{r}
   filtered_quarterly_sf_combined <- filtered_quarterly_sf_combined %>% select(quarter) %>%
   mutate(quarter_num = dense_rank(quarter))
 ```
+
 ```{r}
 filtered_quarterly_sf_combined <- filtered_quarterly_sf_combined %>% select(quarter_num)
 ```
@@ -436,15 +523,19 @@ filtered_quarterly_sf_combined <- filtered_quarterly_sf_combined %>% select(quar
 filtered_quarterly_sf_combined_quarter_ppp <- as.ppp(filtered_quarterly_sf_combined)
 filtered_quarterly_sf_combined_quarter_ppp
 ```
+
 ```{r}
 summary(filtered_quarterly_sf_combined_quarter_ppp)
 ```
+
 ```{r}
 any(duplicated(filtered_quarterly_sf_combined_quarter_ppp))
 ```
+
 ```{r}
 filtered_quarterly_sf_combined_quarter_ppp <- handle_duplicates(filtered_quarterly_sf_combined_quarter_ppp)
 ```
+
 ```{r}
 filtered_quarterly_sf_combined_quarter_owin <- filtered_quarterly_sf_combined_quarter_ppp[admin_boundary_owin]
 summary(filtered_quarterly_sf_combined_quarter_owin)
@@ -455,33 +546,72 @@ plot(filtered_quarterly_sf_combined_quarter_owin, main = paste("filtered_quarter
 ```
 
 ## Computing Spatio-temporal KDE
+
 spattemp.density() of sparr package is used to compute the STKDE.
+
 ```{r}
 filtered_quarterly_sf_combined_quarter_owin <- filtered_quarterly_sf_combined_quarter_ppp[admin_boundary_owin]
 
 st_kde <- spattemp.density(filtered_quarterly_sf_combined_quarter_owin)
 ```
+
 ```{r}
 summary(st_kde)
 ```
+
 ```{r}
 plot(st_kde)
 ```
+
+**KDE Interpretations:**
+
+-   At the earlier time steps (t=1 and t=2), there are relatively few areas with high density, mostly concentrated around Mandalay and Yangon. As time progress, (t = 3 onwards), density increases in more areas of central Myammar, indicating more conflicts breaking out in places such as Chin, Mandalay, Sagaing, Yangon, Chin, Kachin and Kayah. There are some stable hotspots such as Yangon and Mandalay.
+
+-   The events are not just concentrated in one area but gradually spread out across neighboring regions as time progresses.
+
+Here is some historical context behind these findings:
+
+-   **Military coup and protests** (t = 1 and t = 2) January 2021 to mid-2021:
+
+    -   On February 1 2021, the Myanmar military (Tatmadaw) seized power in a coup, ousting the democratically elected National League for Democracy (NLD) led by Aung San Suu Kyi. This event triggered mass protests, civil disobedience, and initial outbreaks of violence. Clashes between military and civilians were largely concerted in Yangon and Mandalay
+
+-   **Spread of Armed Resistance** (t = 3 to t = 5) Late 2021 to 2022:
+
+    -   Civilian protesters formed People’s Defense Forces (PDFs) in response to military violence. These groups initially operated in central Myanmar, including **Mandalay, Sagaing, Magway, and Chin State**, areas where there was historical resistance to military rule
+
+    -   Ethnic minority areas such as **Chin, Kachin, and Kayah States**, which have long histories of armed struggle and resistance to central government control, saw increasing violence.
+
+    -    PDFs launched guerrilla-style attacks on military convoys and outposts. Sagaing, in particular, became one of the epicenters of conflict due to its geographic centrality and the effectiveness of local resistance.
+
+-   **Widespread Conflict Across the Country** (t = 6 to t = 14) 2023 to 2024:
+
+    -   Conflicts spreads to almost every region of Myanmar.
+
+    -   **Sagaing** became one of the most heavily affected regions, with entire villages being destroyed and mass displacement taking place. PDFs in Sagaing carried out numerous successful attacks on military installations.
+
+    -   **Kayah State**, traditionally a stronghold for the Karenni ethnic groups, saw continued conflict between the military and local EAOs.
+
 # 6.0 Second-order Spatio-temporal Point Patterns Analysis
+
 ## Analysing Spatial Point Process Using F-Function
+
 ### Computing F-Function Estimation
 
-We would be using F function to estimate the empty space function F(r) or its hazard rate h(r) from a point pattern in a window of arbitrary shape. 
+We would be using F function to estimate the empty space function F(r) or its hazard rate h(r) from a point pattern in a window of arbitrary shape.
 
-F function measures the distribution of distances from a typical point to the nearest observed point.
-F function is also computationally inexpensive compared to K, L, G functions because it only considers the distances from a set of test points to the nearest event.
+F function measures the distribution of distances from a typical point to the nearest observed point. F function is also computationally inexpensive compared to K, L, G functions because it only considers the distances from a set of test points to the nearest event.
 
 From the spatstat package, we would be using Fest() and envelope() for F function estimation and monte carlo simulation test respectively.
+
 ```{r}
 F_st = Fest(filtered_quarterly_sf_combined_quarter_owin)
 plot(F_st)
 ```
+
+In this case, as F\^km(r), F\^bord(r), F\^cs(r) lie below the Poisson line for small r, indicating that the points tend to be spaced apart more evenly than expected in a completely random pattern. The estimators converge towards 1 as r increases, which is expected because the probability of finding a point within a large distance will naturally approach 1 as the distance grows large. This implies points are distributed more regularly than expected under completely random Poisson distribution at smaller scales.
+
 ### Performing Complete Spatial Randomness Test
+
 To confirm the observed spatial patterns above, a hypothesis test will be conducted. The hypothesis and test are as follows:
 
 Ho = The distribution of armed conflict events in Myanmar is randomly distributed.
@@ -496,13 +626,19 @@ A Monte Carlo test will be employed using the F-function to compare the observed
 set.seed(123) # For reproducibility
 F_st.csr <- envelope(filtered_quarterly_sf_combined_quarter_owin, Fest, nsim = 99)
 ```
+
 ```{r}
 plot(F_st.csr)
 ```
+
+Similarly to previous CSR plots in 4.0, observed F\^obs(r) is below Ftheo(r), indicating points are more dispersed than expected under CSR. The spatial distribution of points significantly deviates from CSR as the F\^obs(r) is below the envelope.
+
 # 7.0 Displaying the KDE and Spatio-temporal KDE layers on openstreetmap of Myanmar.
-Before we plot the KDE and Spatio-temporal KDE layers, we need to convert the KDE and spatio-temporal KDE layers to a format suitable for tmap. 
+
+Before we plot the KDE and Spatio-temporal KDE layers, we need to convert the KDE and spatio-temporal KDE layers to a format suitable for tmap.
 
 Converting KDE to raster
+
 ```{r}
 kde_raster_list = list()
 for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
@@ -512,6 +648,7 @@ for (i in 1:length(kde_quarterly_ppp_mmr_bw)) {
 ```
 
 Converting Spatio-Temporal KDE to raster
+
 ```{r}
 density_images <- st_kde$z
 
@@ -529,6 +666,7 @@ for (time_point in names(density_images)) {
 ```
 
 ## KDE layers on openstreetmap of Myanmar
+
 ```{r}
 tmap_mode('plot')
 # Create a base map with OpenStreetMap
@@ -550,7 +688,7 @@ for (time_point in names(st_kde_raster_list)) {
     st_map <- tm_shape(st_kde_raster_list[[time_point]]) +
       tm_raster(palette = "viridis", title = paste("Density at Time", time_point)) +
       tm_layout(title = paste("Spatiotemporal Kernel Density Estimate - Time", time_point),   
-            legend.text.size = 1,
+            legend.text.size = 0.7,
             legend.height = 1.5,
             legend.width = 1.5)+
       tm_basemap('OpenStreetMap')
@@ -559,5 +697,3 @@ for (time_point in names(st_kde_raster_list)) {
 }
 
 ```
-
-
