@@ -1,0 +1,117 @@
+---
+title: "In-Class Exercise 6"
+author: "Ooi Wen Xian"
+date: "September 23, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+---
+
+# 1.0 Installing and Loading R packages
+
+```{r}
+pacman::p_load(sf, sfdep, tmap, tidyverse)
+```
+
+# 2.0 Import Data
+
+### 2.1 Import shapefile into r environment
+
+```{r}
+hunan <- st_read(dsn = "data/geospatial", layer = "Hunan")
+```
+
+### 2.2 Import csv file into r environment
+
+```{r}
+hunan2012 <- read_csv("data/aspatial/Hunan_2012.csv")
+```
+
+### 2.3 Performing relational join
+
+```{r}
+hunan_GDPPC <- left_join(hunan,hunan2012) %>%   select(1:4, 7, 15)   
+```
+
+# Global Measures of Spatial Association
+
+## Deriving Queen's contiguity weights: sfdep methods
+
+```{r}
+wm_q <- hunan_GDPPC %>% mutate(nb=st_contiguity(geometry),
+                               wt=st_weights(nb,style='W'),
+                               .before = 1)
+```
+
+The purpose of .before = 1:
+
+```{r}
+moranI <- global_moran(wm_q$GDPPC, wm_q$nb, wm_q$wt)
+glimpse (moranI)
+```
+
+K is the average number of neighbours found
+
+```{r}
+global_moran_test(wm_q$GDPPC, wm_q$nb, wm_q$wt)
+```
+
+P-value is smaller than the alpha of confidence level of 95%. We reject the null hypothesis
+
+Moran I statistic is positive at 0.300749970, indicating signs of low clustering.
+
+## Performing global moran's I permutation test
+
+In practice, monte carlo simulation should be used to perform the statistical test. For sfdep, it is supported by global_moran_perm()
+
+```{r}
+set.seed(1234)
+```
+
+```{r}
+global_moran_perm(wm_q$GDPPC, wm_q$nb, wm_q$wt, nsim = 99)
+```
+
+```{r}
+lisa <- wm_q %>%
+  mutate(local_moran = local_moran(GDPPC, nb, wt, nsim = 99)) %>%
+  unnest(local_moran) #to see output in dataframe format
+```
+
+Visualising local moran's I
+
+```{r}
+lisa_sig <- lisa %>% filter(p_ii < 0.05)
+
+tmap_mode('plot')
+
+tm_shape(lisa) + 
+  tm_polygons() +
+  tm_borders(alpha = 0.5) +
+  tm_shape(lisa_sig) + tm_fill('mean') +
+  tm_borders(alpha = 0.4)
+
+```
+
+Computing local Gi\* statistics
+
+```{r}
+wm_idw <- hunan_GDPPC %>% mutate(nb=st_contiguity(geometry),
+                                 wts=st_inverse_distance(nb, geometry, scale=1, alpha=1), .before=1)
+```
+
+```{r}
+HCSA <- wm_idw %>% mutate(local_Gi = local_gstar_perm(GDPPC, nb, wt, nsim=99), .before = 1) %>%
+  unnest(local_Gi)
+HCSA
+```
+
+Visualising hot spot and cold spot areas
+
+```{r}
+HCSA_sig <- HCSA %>% filter(p_sim<0.05)
+tmap_mode('plot')
+tm_shape(HCSA_sig) + tm_fill("gi_star") + tm_borders(alpha = 0.4)
+```
