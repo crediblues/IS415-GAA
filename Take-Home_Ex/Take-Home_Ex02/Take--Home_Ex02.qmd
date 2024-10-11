@@ -1,0 +1,602 @@
+---
+title: "Take Home Exercise 2"
+subtitle: "Application of Geospatial Analysis Methods to Discover Thailand Drug Abuse at the Province Level"
+author: "Ooi Wen Xian"
+date: "September 25, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+---
+
+# 1.0 Overview
+
+Drug abuse is associated with significant negative health, financial and social consequences. Yet, illicit drug consumption remains highly prevalent and continues to be a growing problem worldwide. In 2021, 1 in 17 people aged 15–64 in the world had used a drug in the past 12 months. Notwithstanding population growth, the estimated number of drug users grew from 240 million in 2011 to 296 million in 2021.
+
+The geopolitics of Thailand which is near the [Golden Triangle](https://en.wikipedia.org/wiki/Golden_Triangle_(Southeast_Asia)) of Indochina, the largest drug production site in Asia, and the constant transportation infrastructure development made Thailand became market and transit routes for drug trafficking to the third countries.
+
+In Thailand, drug abuse is one of the major social issue. There are about 2.7 million youths using drugs in Thailand. Among youths aged between 15 and 19 years, there are about 300,000 who have needs for drug treatment. Most of Thai youths involved with drugs are vocational-school students, which nearly doubles in number compared to secondary-school students.
+
+## 1.1 Study Objectives
+
+We are interested to discover:
+
+-   if the key indicators of drug abuse of Thailand are independent from space.
+
+-   If the indicators of drug abuse is indeed spatial dependent, if then, detect where are the clusters and outliers, and the hotspots.
+
+-   How the observations above evolve over time.
+
+# 2.0 Importing Packages
+
+We need to import the following packages that are used for this study:
+
+-   [`sf`](https://rdrr.io/github/r-spatial/sf/man/sf-package.html) : to import, manage and process vector-based geospatial data in R.
+
+-   [`st`](https://rdrr.io/cran/sf/man/st.html) : creates simple features from numeric vectors, matrices, or lists, enabling the representation and manipulation of spatial structures in R.
+
+-   [`tidyverse`](https://www.tidyverse.org/) : a collection of R packages designed for data science, includes packages like `dplyr` for data manipulation, `ggplot2` for data visualization[`sfdep`](https://cran.r-project.org/web/packages/spdep/) : for computing spatial weights, global and local spatial autocorrelation statistics
+
+-   [`tmap`](https://cran.r-project.org/web/packages/tmap/) : for creating static and interactive thematic visualisations and maps.
+
+-   [`knitr`](https://cran.r-project.org/web/packages/spdep/) : to allow R code to be embedded in R Markdown documents.
+
+```{r}
+pacman::p_load(sf,st, tidyverse, tmap, knitr, spdep, arrow)
+```
+
+# 3.0 Importing Data
+
+For the purpose of this study, two data sets shall be used, they are:
+
+-   [Thailand Drug Offenses \[2017-2022\]](https://www.kaggle.com/datasets/thaweewatboy/thailand-drug-offenses-2017-2022) at Kaggle.
+
+-   [Thailand - Subnational Administrative Boundaries](https://data.humdata.org/dataset/cod-ab-tha?) at HDX. We would be using the province boundary data set.
+
+## 3.1 Importing Geospatial Data
+
+As provinces are administrative level 1, we would be using the `tha_admbnda_adm1_rtsd_20220121` shapefile.
+
+In this section, `st_read()` of **sf** package will be used to import `tha_admbnda_adm1_rtsd_20220121` dataset into R environment.
+
+```{r}
+thai_province <- st_read(dsn = "data/tha_adm_rtsd_itos_20210121_shp", layer = "tha_admbnda_adm1_rtsd_20220121")
+```
+
+```{r}
+st_crs(thai_province)
+```
+
+We shall convert to UTM Zone 47N (EPSG: 32647), which is often used for Thailand.
+
+```{r}
+thai_province <- st_transform(thai_province, crs = 32647)
+```
+
+```{r}
+st_crs(thai_province)
+```
+
+Let's take a look at what is in `tha_province_admin_boundary`:
+
+```{r}
+thai_province
+```
+
+```{r}
+tmap_mode("plot")
+tm_shape(thai_province)+
+  tm_fill(col="white")+
+  tm_borders(col = "black", lwd=0.3, alpha=0.6)+
+  tm_layout(
+    main.title = "Provinces in Thailand",
+    main.title.size = 1,
+    main.title.position = "center",
+    legend.show = FALSE,
+     frame = FALSE)
+```
+
+## 3.2 Importing Aspatial Data
+
+In this section, `read_csv()` of **sf** package will be used to import the csv file into R environment. The output is R dataframe class.
+
+```{r}
+tha_drug_offences <- read_csv("data/thai_drug_offenses_2017_2022.csv")
+tha_drug_offences
+```
+
+# 4.0 Data Wrangling
+
+## 4.1 Correcting Province Name Mismatch
+
+Let's check if the names of the provinces in our geospatial and aspatial data match each other
+
+```{r}
+tha_drug_offences_provinces <- unique(tha_drug_offences$province_en)
+thai_province_provinces <- unique(thai_province$ADM1_EN)
+
+# Find provinces in drug data that don't match the spatial data
+mismatched_drug_provinces <- setdiff(tha_drug_offences_provinces, thai_province_provinces)
+
+# Find provinces in spatial data that don't match the drug data
+mismatched_spatial_provinces <- setdiff(thai_province_provinces, tha_drug_offences_provinces)
+
+# Mismatched province names
+cat("Provinces in drug data but not in spatial data:\n", mismatched_drug_provinces, "\n")
+cat("Provinces in spatial data but not in drug data:\n", mismatched_spatial_provinces, "\n")
+
+```
+
+The provinces for Lop Buri and Bueng Kan are misspelled in `tha_drug_offences_provinces` .
+
+Let's rename them.
+
+```{r}
+tha_drug_offences <- tha_drug_offences %>%
+  mutate(province_en = case_when(
+    province_en == "Loburi" ~ "Lop Buri",
+    province_en == "buogkan" ~ "Bueng Kan",
+    TRUE ~ province_en  # Keep other names unchanged
+  ))
+
+```
+
+Checking again for mismatch
+
+```{r}
+tha_drug_offences_provinces <- unique(tha_drug_offences$province_en)
+thai_province_provinces <- unique(thai_province$ADM1_EN)
+
+# Find provinces in drug data that don't match the spatial data
+mismatched_drug_provinces <- setdiff(tha_drug_offences_provinces, thai_province_provinces)
+
+# Find provinces in spatial data that don't match the drug data
+mismatched_spatial_provinces <- setdiff(thai_province_provinces, tha_drug_offences_provinces)
+
+# Mismatched province names
+cat("Provinces in drug data but not in spatial data:\n", mismatched_drug_provinces, "\n")
+cat("Provinces in spatial data but not in drug data:\n", mismatched_spatial_provinces, "\n")
+```
+
+## 4.2 Drop redundant columns
+
+To reduce the memory load, we can drop columns which are not relevant for this study and store only relevant columns
+
+```{r}
+tha_drug_offences <- subset(tha_drug_offences, select = c(fiscal_year, province_en, no_cases, types_of_drug_offenses))
+
+tha_drug_offences
+
+```
+
+```{r}
+thai_province <- subset(thai_province, select = c(Shape_Leng, Shape_Area, ADM1_EN, geometry))
+
+thai_province 
+```
+
+## 4.3 Relational Join
+
+Since `tha_drug_offences` only contains province names without any geometry, we will need to perform a **spatial join** to associate the drug data with the province boundaries.
+
+The code chunk below will be used to join the attribute tables of `thai_province`’s SpatialPolygonsDataFrame with the attribute fields of `tha_drug_offences` dataframe. This is performed by using [`left_join()`](https://dplyr.tidyverse.org/reference/mutate-joins.html) of **dplyr** package.
+
+```{r}
+thai_province <- thai_province %>%
+  left_join(tha_drug_offences , by = c("ADM1_EN" = "province_en"))
+thai_province
+
+```
+
+```{r}
+drug_offense_summary <- thai_province %>%
+  group_by(ADM1_EN, types_of_drug_offenses) %>%
+  summarise(total_cases = sum(no_cases, na.rm = TRUE), .groups = 'drop')
+drug_offense_summary
+```
+
+Since we are concerned about drug use cases, let's filter our data for specific indicators only. We would be using these 5 indicators for our analysis.
+
+-   drug_use_cases
+
+-   possession_cases
+
+-   possession_with_intent_to_distribute_cases
+
+-   production_cases
+
+-   trafficking_cases
+
+```{r}
+drug_abuse_indicators_summary <- thai_province %>%
+  filter(types_of_drug_offenses %in% c("drug_use_cases", 
+                                       "possession_cases", 
+                                       "possession_with_intent_to_distribute_cases", 
+                                       "production_cases",
+                                       "trafficking_cases")) %>%
+  group_by(ADM1_EN, fiscal_year, types_of_drug_offenses) %>%
+  summarise(total_cases = sum(no_cases, na.rm = TRUE), .groups = 'drop')
+
+# View the drug abuse indicators layer
+drug_abuse_indicators_summary
+```
+
+```{r}
+# Get unique fiscal years
+years <- unique(drug_abuse_indicators_summary$fiscal_year)
+
+# Loop through each year to create and save individual plots
+for (year in years) {
+  # Filter data for the current year
+  year_data <- drug_abuse_indicators_summary %>%
+    filter(fiscal_year == year)
+  
+  # Create the plot
+  p <- ggplot(year_data, aes(x = ADM1_EN, y = total_cases, fill = types_of_drug_offenses)) +
+    geom_col(position = position_dodge(width = 0.9), width = 0.7) +  # Create bars for total cases
+    labs(title = paste("Distribution of Drug Abuse Indicators in", year),
+         x = "Province",
+         y = "Total Cases",
+         fill = "Type of Drug Offense") +
+    theme_minimal() +  # Use a minimal theme
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4),  # Rotate x-axis labels for readability
+          legend.position = "right",
+          legend.text = element_text(size = 4)) +
+    scale_fill_brewer(palette = "Set3")  # Optional: Set a color palette for better visibility
+  
+  # Print the plot
+  print(p)
+}
+
+```
+
+## 4.4 Visualising Type of Drug offences
+
+Let's visualise the distribution of total drug cases from our indicators by using qtm() of tmap package, via equal and quantile classification styles.
+
+```{r}
+drug_offense_summary_all_cases <- thai_province %>%
+  group_by(ADM1_EN, fiscal_year) %>%
+  summarise(total_cases = sum(no_cases, na.rm = TRUE),
+            geometry = first(geometry), .groups = 'drop')
+
+# View the summarized data
+print(drug_offense_summary_all_cases)
+```
+
+
+```{r}
+tmap_mode('plot')
+# Get unique fiscal years
+years <- unique(drug_offense_summary_all_cases$fiscal_year)
+
+# Loop through each year to create and display maps
+for (year in years) {
+  # Filter data for the current year
+  year_data <- drug_offense_summary_all_cases[drug_offense_summary_all_cases$fiscal_year == year, ]
+  
+  # Create a map with equal interval classification
+  equal <- tm_shape(year_data) +
+    tm_fill("total_cases",
+            n = 5,
+            style = "equal",
+            title = "Total Drug Use Cases") +
+    tm_borders(alpha = 0.5) +
+    tm_layout(main.title = paste("Equal Interval -", year), title.size = 0.5)
+  
+  # Create a map with quantile classification
+  quantile <- tm_shape(year_data) +
+    tm_fill("total_cases",
+            n = 5,
+            style = "quantile",
+            title = "Total Drug Use Cases") +
+    tm_borders(alpha = 0.5) +
+    tm_layout(main.title = paste("Quantile -", year), title.size = 0.5)
+  
+  # Arrange the two maps side by side
+  tmap_arranged <- tmap_arrange(equal, quantile, asp = 1, ncol = 2)
+  
+  # Print the arranged map
+  print(tmap_arranged)
+}
+
+```
+
+# 5.0 Global Measures of Spatial Autocorrelation
+In this section, we would be computing global spatial autocorrelation statistics and to perform spatial complete randomness test for global spatial autocorrelation.
+
+## 5.1 Computing Contiguity Spatial Weights
+
+Before we can compute the global spatial autocorrelation statistics, we need to construct a spatial weights of the study area. The spatial weights is used to define the neighbourhood relationships between the geographical units (i.e. province) in the study area.
+
+In the code chunk below, poly2nb() of spdep package is used to compute contiguity weight matrices for the study area. This function builds a neighbours list based on regions with contiguous boundaries.  
+
+The code chunk below is used to compute Queen contiguity weight matrix.
+```{r}
+# Create an empty list to store results for each year
+yearly_nb_data <- list()
+
+# Loop through each fiscal year
+for (year in unique(drug_offense_summary_all_cases$fiscal_year)) {
+  
+  # Subset data for the current year
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  
+  # Create neighbors list using poly2nb for the current year's data
+  wm_q <- poly2nb(as(yearly_data, "Spatial"), queen=TRUE)
+  
+  # Store the result
+  yearly_nb_data[[as.character(year)]] <- wm_q
+  
+  # Print summary for each year
+  print(paste("Summary for year", year))
+  print(summary(wm_q))
+}
+```
+
+Seems like there is a region which has no links. Let's find out the region.
+
+```{r}
+# Check if the neighbor list is connected
+components <- n.comp.nb(yearly_nb_data[['2017']])
+components$comp.id  # Component ID of each region
+
+```
+```{r}
+# After running your loop, check yearly_nb_data
+for (year in names(yearly_nb_data)) {
+  wm_q <- yearly_nb_data[[year]]
+  
+  # Find indices of regions with no neighbors
+  no_link_indices <- which(card(wm_q) == 0)
+  
+  # If there are regions with no links, get their names
+  if (length(no_link_indices) > 0) {
+    cat("Regions with no links for year", year, ":\n")
+    
+    # Get region names from the original dataset
+    for (index in no_link_indices) {
+      region_name <- yearly_data$ADM1_EN[index]  # Adjust based on your original dataframe structure
+      cat(region_name, "\n")  # Print region names
+    }
+  } else {
+    cat("All regions have links for year", year, "\n")
+  }
+}
+```
+Phuket is the disconnected province, which makes sense geographically, as Phuket is an island province in Thailand, which could lead to its being classified as a separate component in spatial neighbor analysis and it being isolated when using the poly2nb() function
+
+```{r}
+yearly_listw_data <- list()
+
+# Loop through each year in the yearly_nb_data list
+for (year in names(yearly_nb_data)) {
+  
+  # Get the neighbors list for the current year
+  wm_q <- yearly_nb_data[[year]]
+  
+  # Convert neighbors list to a listw object
+  rswm_q <- nb2listw(wm_q, style = "W", zero.policy = TRUE)
+  
+  # Store the result in the new list
+  yearly_listw_data[[year]] <- rswm_q
+  
+  # Print the result for each year if needed
+  print(paste("Weight object for year", year))
+  print(rswm_q)
+}
+
+```
+## 5.2 Global Measures of Spatial Autocorrelation: Moran’s I
+```{r}
+# Create an empty list to store Moran's I results for each year
+moran_results <- list()
+
+# Loop through each year in the yearly_listw_data list
+for (year in names(yearly_listw_data)) {
+  
+  # Get the corresponding weight object for the current year
+  rswm_q <- yearly_listw_data[[year]]
+  
+  # Subset the GDPPC data for the current year
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  
+  # Run the Moran's I test
+  moran_test_result <- moran.test(yearly_data$total_cases, 
+                                   listw = rswm_q, 
+                                   zero.policy = TRUE, 
+                                   na.action = na.omit)
+  
+  # Store the result in the moran_results list
+  moran_results[[year]] <- moran_test_result
+  
+  # Print the result for each year if needed
+  print(paste("Moran's I test result for year", year))
+  print(moran_test_result)
+}
+```
+Positive Moran's I values indicate a tendency for similar values (in this case, total_cases) to cluster in space, suggesting spatial autocorrelation.
+Significant p-values (typically less than 0.05) indicate that the observed spatial autocorrelation is statistically significant. All years showed significant results, suggesting consistent clustering of drug offense cases over the years analyzed.
+### 5.2.1 Computing and Visualising Monte Carlo Moran’s I
+The code chunk below performs permutation test for Moran’s I statistic by using moran.mc() of spdep. A total of 1000 simulation will be performed.
+
+The distribution of the statistical values as a histogram is also plotted by using the code chunk below.
+
+hist() and abline() of R Graphics are used.
+```{r}
+set.seed(1234)
+
+# Create an empty list to store Moran's I results for each year
+yearly_moran_mc_results <- list()
+
+# Loop through each year in the yearly_listw_data list
+for (year in names(yearly_listw_data)) {
+  
+  # Get the corresponding weight object for the current year
+  rswm_q <- yearly_listw_data[[year]]
+  
+  # Subset the data for the current year
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  
+  # Run the Monte Carlo Moran's I test
+  moranmc_test_result <- moran.mc(yearly_data$total_cases, listw = rswm_q, nsim = 999, zero.policy = TRUE, na.action = na.omit)
+  
+  # Store the result in the list
+  yearly_moran_mc_results[[year]] <- moranmc_test_result
+  
+  # Print the result for each year
+  print(paste("Moran's I test result for year", year))
+  print(moranmc_test_result)
+  
+  # Access the simulated values (Monte Carlo simulations)
+  sim_results <- moranmc_test_result$res
+  
+  # Display summary statistics of the simulations
+  cat("Summary of Monte Carlo simulations for year", year, ":\n")
+  print(summary(sim_results))
+  
+  # Plot histogram of the simulated Moran's I values
+  hist(sim_results, freq = TRUE, breaks = 20, xlab = "Simulated Moran's I", main = paste("Histogram of Simulated Moran's I for", year))
+  
+  # Add a red vertical line for observed Moran's I
+  abline(v = moranmc_test_result$statistic, col = "red")
+}
+```
+Given that the p-value is much smaller than common significance levels (e.g., 0.05 or 0.01), we reject the null hypothesis of no spatial autocorrelation. This means that there is statistically significant evidence to suggest that the total_cases variable is spatially correlated in the regions analyzed.
+
+The positive Moran's I statistic indicates that areas with higher counts of total cases are likely to be located near each other, suggesting a clustering effect. This can imply that factors leading to higher cases are spatially concentrated in certain regions.
+
+The consistency of the Moran’s I statistic, standard deviate, and p-value across all years from 2017 to 2022 indicates that the spatial autocorrelation of total_cases has persisted over time. This could point to ongoing or systematic issues related to drug offenses in specific areas.
+
+## 5.3 Global Measures of Spatial Autocorrelation: Geary’s C
+In this section, we would be computing Geary’s C statistics testing by using appropriate functions of spdep package.
+
+### 5.3.1 Geary’s C test
+The code chunk below performs Geary’s C test for spatial autocorrelation by using geary.test() of spdep.
+```{r}
+yearly_geary_results <- list()
+
+# Loop through each year in the yearly_listw_data list
+for (year in names(yearly_listw_data)) {
+  
+  # Get the corresponding weight object for the current year
+  rswm_q <- yearly_listw_data[[year]]
+  
+  # Subset the total_cases data for the current year
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  
+  # Run the Geary's C test
+  geary_test_result <- geary.test(yearly_data$total_cases, listw = rswm_q, zero.policy = TRUE, na.action = na.omit)
+  
+  # Store the result in the geary_results list
+  yearly_geary_results[[year]] <- geary_test_result
+  
+  # Print the result for each year if needed
+  print(paste("Geary's C test result for year", year))
+  print(geary_test_result)
+}
+```
+General Interpretation of Geary's C:
+Geary's C statistic values close to 1 suggest no spatial autocorrelation (randomness in spatial data).
+Values less than 1 indicate positive spatial autocorrelation (neighboring areas have similar values), meaning that nearby regions tend to have similar drug offense totals.
+Values greater than 1 suggest negative spatial autocorrelation (neighboring areas have dissimilar values), meaning that nearby regions tend to have different drug offense totals.
+
+Breakdown of Results:
+2017:
+Geary's C = 0.99196, p-value = 0.4767
+The Geary's C value is close to 1, suggesting little to no spatial autocorrelation. The p-value indicates that there is no statistically significant spatial autocorrelation in drug offense totals for this year.
+
+2018:
+Geary's C = 1.00139, p-value = 0.5041
+The Geary's C value is slightly above 1, but still very close to 1, suggesting no significant spatial autocorrelation. The p-value is not significant.
+
+2019:
+Geary's C = 0.92999, p-value = 0.2732
+The Geary’s C value is less than 1, indicating a weak positive spatial autocorrelation (regions with similar drug offense totals are more likely to be adjacent). However, the p-value indicates that this effect is not statistically significant.
+
+2020:
+Geary's C = 0.94641, p-value = 0.3021
+Similar to 2019, the Geary’s C statistic is less than 1, suggesting weak positive spatial autocorrelation, but again the p-value is not statistically significant.
+
+2021:
+Geary's C = 0.86448, p-value = 0.06197
+The Geary's C value is lower than 1, suggesting stronger positive spatial autocorrelation compared to previous years. The p-value (0.06197) is approaching significance at the 0.05 level, indicating a possible spatial pattern in drug offenses.
+
+2022:
+Geary's C = 0.84715, p-value = 0.03203
+The Geary's C value is notably less than 1, indicating stronger positive spatial autocorrelation for this year. The p-value (0.03203) is statistically significant, meaning that for 2022, there is significant evidence of spatial clustering in drug offense totals.
+
+No strong spatial autocorrelation is found for most years, except for 2021 and 2022, where the data suggests positive spatial autocorrelation (regions with similar drug offense totals are likely to be near each other).
+The spatial pattern is particularly significant in 2022, where the p-value indicates that neighboring regions are likely to have similar drug offense totals, showing statistically significant spatial clustering.
+2021 also shows potential clustering, with a p-value close to 0.05, suggesting a trend towards spatial autocorrelation.
+
+### 5.3.2 Computing Monte Carlo Geary’s C
+```{r}
+set.seed(1234)
+
+yearly_geary_mc_results <- list()
+
+for (year in names(yearly_listw_data)) {
+  
+  rswm_q <- yearly_listw_data[[year]]
+  
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  
+  geary_mc_test_result <- geary.mc(yearly_data$total_cases, 
+                                   listw = rswm_q, 
+                                   nsim = 999, 
+                                   zero.policy = TRUE, 
+                                   na.action = na.omit)
+  
+  yearly_geary_mc_results[[year]] <- geary_mc_test_result
+  
+  print(paste("Geary's C Monte Carlo test result for year", year))
+  print(geary_mc_test_result)
+}
+```
+For years 2017, 2018, 2019, and 2020: 
+- High p-values (>0.05) indicate that there is no significant evidence to reject the null hypothesis, suggesting that there is no significant spatial clustering of total cases.
+
+For year 2021: 
+- A p-value of 0.102 is approaching significance, indicating some evidence of spatial clustering but not strong enough to conclude.
+Year 2022: The p-value of 0.052 is very close to the significance threshold (0.05), indicating a potential trend toward spatial clustering of total cases, warranting further investigation.
+
+
+```{r}
+set.seed(1234)
+
+# Loop through each year in the yearly_geary_mc_results list
+for (year in names(yearly_geary_mc_results)) {
+  bperm <- yearly_geary_mc_results[[year]]
+  
+  # Calculate mean and variance of simulated values
+  mean_value <- mean(bperm$res[1:999])
+  var_value <- var(bperm$res[1:999])
+  
+  # Print summary statistics
+  summary_stats <- summary(bperm$res[1:999])
+  print(paste("Summary statistics for year", year))
+  print(summary_stats)
+  
+  # Create histogram
+  hist(bperm$res, 
+       freq=TRUE, 
+       breaks=20, 
+       xlab="Simulated Geary's C", 
+       main=paste("Geary's C Monte Carlo Simulation -", year))
+  
+  # Add a vertical line at 1
+  abline(v=1, col="red")
+}
+```
+
+# 6.0 Local Measures of Spatial Autocorrelation
+
+# 6.1 Computing local Moran’s I
+
