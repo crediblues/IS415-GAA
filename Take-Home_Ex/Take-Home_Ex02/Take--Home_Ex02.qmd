@@ -43,7 +43,7 @@ We need to import the following packages that are used for this study:
 -   [`knitr`](https://cran.r-project.org/web/packages/spdep/) : to allow R code to be embedded in R Markdown documents.
 
 ```{r}
-pacman::p_load(sf,st, tidyverse, tmap, knitr, spdep, arrow)
+pacman::p_load(sf,st, tidyverse, tmap, knitr, sfdep, arrow)
 ```
 
 # 3.0 Importing Data
@@ -310,7 +310,7 @@ In this section, we would be computing global spatial autocorrelation statistics
 
 Before we can compute the global spatial autocorrelation statistics, we need to construct a spatial weights of the study area. The spatial weights is used to define the neighbourhood relationships between the geographical units (i.e. province) in the study area.
 
-In the code chunk below, poly2nb() of spdep package is used to compute contiguity weight matrices for the study area. This function builds a neighbours list based on regions with contiguous boundaries.  
+In the code chunk below, st_neighbors() from sfdep package is used to compute contiguity weight matrices for the study area. This function builds a neighbours list based on regions with contiguous boundaries.  
 
 The code chunk below is used to compute Queen contiguity weight matrix.
 ```{r}
@@ -320,150 +320,113 @@ yearly_nb_data <- list()
 # Loop through each fiscal year
 for (year in unique(drug_offense_summary_all_cases$fiscal_year)) {
   
-  # Subset data for the current year
-  yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
+  yearly_data <- drug_offense_summary_all_cases %>% filter(fiscal_year == year)
   
-  # Create neighbors list using poly2nb for the current year's data
-  wm_q <- poly2nb(as(yearly_data, "Spatial"), queen=TRUE)
-  
-  # Store the result
-  yearly_nb_data[[as.character(year)]] <- wm_q
+  wm_sf <- st_contiguity(yearly_data, queen=TRUE) 
+
+  yearly_nb_data[[as.character(year)]] <- wm_sf
   
   # Print summary for each year
   print(paste("Summary for year", year))
-  print(summary(wm_q))
+  print(summary(wm_sf))
 }
+
 ```
 
-Seems like there is a region which has no links. Let's find out the region.
+Phuket is the disconnected province, which makes sense geographically, as Phuket is an island province in Thailand, which could lead to its being classified as a separate component in spatial neighbor analysis and it being isolated when using the st_contiguity() function.
 
 ```{r}
-# Check if the neighbor list is connected
-components <- n.comp.nb(yearly_nb_data[['2017']])
-components$comp.id  # Component ID of each region
-
-```
-```{r}
-# After running your loop, check yearly_nb_data
-for (year in names(yearly_nb_data)) {
-  wm_q <- yearly_nb_data[[year]]
+for (year in unique(drug_offense_summary_all_cases$fiscal_year)) {
   
-  # Find indices of regions with no neighbors
-  no_link_indices <- which(card(wm_q) == 0)
+  # Filter data for the current year and exclude Phuket (ADM1_EN == "Phuket")
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  # If there are regions with no links, get their names
-  if (length(no_link_indices) > 0) {
-    cat("Regions with no links for year", year, ":\n")
-    
-    # Get region names from the original dataset
-    for (index in no_link_indices) {
-      region_name <- yearly_data$ADM1_EN[index]  # Adjust based on your original dataframe structure
-      cat(region_name, "\n")  # Print region names
-    }
-  } else {
-    cat("All regions have links for year", year, "\n")
-  }
+  # Create the spatial neighbors list for the filtered data
+  wm_sf <- st_contiguity(yearly_data, queen = TRUE) 
+  
+  # Store the results in the yearly_nb_data list
+  yearly_nb_data[[as.character(year)]] <- wm_sf
+  
+  # Print summary for each year
+  print(paste("Summary for year", year))
+  print(summary(wm_sf))
 }
-```
-Phuket is the disconnected province, which makes sense geographically, as Phuket is an island province in Thailand, which could lead to its being classified as a separate component in spatial neighbor analysis and it being isolated when using the poly2nb() function
 
+```
 ```{r}
 yearly_listw_data <- list()
 
-# Loop through each year in the yearly_nb_data list
 for (year in names(yearly_nb_data)) {
   
-  # Get the neighbors list for the current year
   wm_q <- yearly_nb_data[[year]]
+
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  # Convert neighbors list to a listw object
-  rswm_q <- nb2listw(wm_q, style = "W", zero.policy = TRUE)
+  rswm_q <- st_weights(wm_q, style="W")
   
-  # Store the result in the new list
   yearly_listw_data[[year]] <- rswm_q
   
-  # Print the result for each year if needed
   print(paste("Weight object for year", year))
   print(rswm_q)
-}
 
+}
 ```
+
 ## 5.2 Global Measures of Spatial Autocorrelation: Moran’s I
 ```{r}
-# Create an empty list to store Moran's I results for each year
 moran_results <- list()
 
-# Loop through each year in the yearly_listw_data list
-for (year in names(yearly_listw_data)) {
+for (year in names(yearly_nb_data)) {
   
-  # Get the corresponding weight object for the current year
-  rswm_q <- yearly_listw_data[[year]]
+  wt <- yearly_listw_data[[year]]
   
-  # Subset the GDPPC data for the current year
+  nb <- yearly_nb_data[[year]]
+  
   yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  # Run the Moran's I test
-  moran_test_result <- moran.test(yearly_data$total_cases, 
-                                   listw = rswm_q, 
-                                   zero.policy = TRUE, 
-                                   na.action = na.omit)
+  var <- yearly_data$total_cases
   
-  # Store the result in the moran_results list
+  moran_test_result <- global_moran(var, nb, wt)
+  
   moran_results[[year]] <- moran_test_result
   
-  # Print the result for each year if needed
   print(paste("Moran's I test result for year", year))
   print(moran_test_result)
 }
+
 ```
 Positive Moran's I values indicate a tendency for similar values (in this case, total_cases) to cluster in space, suggesting spatial autocorrelation.
 Significant p-values (typically less than 0.05) indicate that the observed spatial autocorrelation is statistically significant. All years showed significant results, suggesting consistent clustering of drug offense cases over the years analyzed.
-### 5.2.1 Computing and Visualising Monte Carlo Moran’s I
-The code chunk below performs permutation test for Moran’s I statistic by using moran.mc() of spdep. A total of 1000 simulation will be performed.
 
-The distribution of the statistical values as a histogram is also plotted by using the code chunk below.
+### 5.2.1 Computing and Visualising Global Moran’s I
+The Global Moran’s I test, which can be implemented using the global_moran_test() function from the sfdep package, is a method for testing spatial autocorrelation
 
-hist() and abline() of R Graphics are used.
 ```{r}
-set.seed(1234)
+moran_results <- list()
 
-# Create an empty list to store Moran's I results for each year
-yearly_moran_mc_results <- list()
-
-# Loop through each year in the yearly_listw_data list
-for (year in names(yearly_listw_data)) {
+for (year in names(yearly_nb_data)) {
   
-  # Get the corresponding weight object for the current year
-  rswm_q <- yearly_listw_data[[year]]
+  wt <- yearly_listw_data[[year]]
   
-  # Subset the data for the current year
+  nb <- yearly_nb_data[[year]]
+  
   yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  # Run the Monte Carlo Moran's I test
-  moranmc_test_result <- moran.mc(yearly_data$total_cases, listw = rswm_q, nsim = 999, zero.policy = TRUE, na.action = na.omit)
+  var <- yearly_data$total_cases
   
-  # Store the result in the list
-  yearly_moran_mc_results[[year]] <- moranmc_test_result
+  moran_test_result <- global_moran_test(var,
+                  nb,
+                  wt,
+                  alternative = "greater")
   
-  # Print the result for each year
-  print(paste("Moran's I test result for year", year))
-  print(moranmc_test_result)
+  moran_results[[year]] <- moran_test_result
   
-  # Access the simulated values (Monte Carlo simulations)
-  sim_results <- moranmc_test_result$res
-  
-  # Display summary statistics of the simulations
-  cat("Summary of Monte Carlo simulations for year", year, ":\n")
-  print(summary(sim_results))
-  
-  # Plot histogram of the simulated Moran's I values
-  hist(sim_results, freq = TRUE, breaks = 20, xlab = "Simulated Moran's I", main = paste("Histogram of Simulated Moran's I for", year))
-  
-  # Add a red vertical line for observed Moran's I
-  abline(v = moranmc_test_result$statistic, col = "red")
+  print(paste("Global Moran's I test result for year", year))
+  print(moran_test_result)
 }
 ```
 Given that the p-value is much smaller than common significance levels (e.g., 0.05 or 0.01), we reject the null hypothesis of no spatial autocorrelation. This means that there is statistically significant evidence to suggest that the total_cases variable is spatially correlated in the regions analyzed.
@@ -471,35 +434,73 @@ Given that the p-value is much smaller than common significance levels (e.g., 0.
 The positive Moran's I statistic indicates that areas with higher counts of total cases are likely to be located near each other, suggesting a clustering effect. This can imply that factors leading to higher cases are spatially concentrated in certain regions.
 
 The consistency of the Moran’s I statistic, standard deviate, and p-value across all years from 2017 to 2022 indicates that the spatial autocorrelation of total_cases has persisted over time. This could point to ongoing or systematic issues related to drug offenses in specific areas.
+### 5.2.2 Performing Global Moran’s permutation test
+```{r}
+gmoranMC_results <- list()
+
+for (year in names(yearly_nb_data)) {
+  
+  wt <- yearly_listw_data[[year]]
+  
+  nb <- yearly_nb_data[[year]]
+  
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
+  
+  var <- yearly_data$total_cases
+  
+  gmoranMCresult <- global_moran_perm(var,
+                  nb,
+                  wt,
+                  nsim = 999)
+  
+  gmoranMC_results[[year]] <- gmoranMCresult
+  
+  print(paste("Global Moran's I test result for year", year))
+  print(gmoranMCresult)
+}
+```
+```{r}
+for (year in names(yearly_nb_data)) {
+  gmoranMC <- gmoranMC_results[[year]]
+  hist(gmoranMC$res, main="Histogram of Global Moran's I Monte-Carlo Simulation Results", xlab="Monte-Carlo Results", ylab="Frequency")
+
+  abline(v = gmoranMC$statistic, col = "red")
+}
+
+```
 
 ## 5.3 Global Measures of Spatial Autocorrelation: Geary’s C
 In this section, we would be computing Geary’s C statistics testing by using appropriate functions of spdep package.
 
 ### 5.3.1 Geary’s C test
-The code chunk below performs Geary’s C test for spatial autocorrelation by using geary.test() of spdep.
-```{r}
-yearly_geary_results <- list()
+The code chunk below performs Geary’s C test for spatial autocorrelation by using the global_c_test() function from the sfdep package.
 
-# Loop through each year in the yearly_listw_data list
-for (year in names(yearly_listw_data)) {
+```{r}
+yearly_globalCgeary_results <- list()
+
+for (year in names(yearly_nb_data)) {
   
-  # Get the corresponding weight object for the current year
-  rswm_q <- yearly_listw_data[[year]]
+  wt <- yearly_listw_data[[year]]
   
-  # Subset the total_cases data for the current year
+  nb <- yearly_nb_data[[year]]
+  
   yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  # Run the Geary's C test
-  geary_test_result <- geary.test(yearly_data$total_cases, listw = rswm_q, zero.policy = TRUE, na.action = na.omit)
+  var <- yearly_data$total_cases
   
-  # Store the result in the geary_results list
-  yearly_geary_results[[year]] <- geary_test_result
+  globalgearyc <- global_c_test(var,
+                  nb,
+                  wt,
+                  alternative = "greater")
   
-  # Print the result for each year if needed
-  print(paste("Geary's C test result for year", year))
-  print(geary_test_result)
+  yearly_globalCgeary_results[[year]] <- globalgearyc
+  
+  print(year)
+  print(globalgearyc)
 }
+
 ```
 General Interpretation of Geary's C:
 Geary's C statistic values close to 1 suggest no spatial autocorrelation (randomness in spatial data).
@@ -543,22 +544,26 @@ yearly_geary_mc_results <- list()
 
 for (year in names(yearly_listw_data)) {
   
-  rswm_q <- yearly_listw_data[[year]]
+  wt <- yearly_listw_data[[year]]
+  
+  nb <- yearly_nb_data[[year]]
   
   yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  geary_mc_test_result <- geary.mc(yearly_data$total_cases, 
-                                   listw = rswm_q, 
-                                   nsim = 999, 
-                                   zero.policy = TRUE, 
-                                   na.action = na.omit)
+  var <- yearly_data$total_cases
+  
+  geary_mc_test_result <- global_c_perm(var,
+                  nb,
+                  wt,
+                  nsim = 999)
   
   yearly_geary_mc_results[[year]] <- geary_mc_test_result
   
   print(paste("Geary's C Monte Carlo test result for year", year))
   print(geary_mc_test_result)
 }
+
 ```
 For years 2017, 2018, 2019, and 2020: 
 - High p-values (>0.05) indicate that there is no significant evidence to reject the null hypothesis, suggesting that there is no significant spatial clustering of total cases.
@@ -569,8 +574,6 @@ Year 2022: The p-value of 0.052 is very close to the significance threshold (0.0
 
 
 ```{r}
-set.seed(1234)
-
 # Loop through each year in the yearly_geary_mc_results list
 for (year in names(yearly_geary_mc_results)) {
   bperm <- yearly_geary_mc_results[[year]]
@@ -598,53 +601,34 @@ for (year in names(yearly_geary_mc_results)) {
 
 # 6.0 Local Measures of Spatial Autocorrelation
 
-## 6.1 Computing local Moran’s I
+## 6.1 Computing and Mapping local Moran’s I
+local_moran() function of sfdep package will be used for computing local Moran’s I.
+
 ```{r}
 localMI_results <- list()
 
 set.seed(1234)
 
-for (year in names(yearly_listw_data)) {
+for (year in names(yearly_nb_data)) {
   
-  rswm_q <- yearly_listw_data[[year]]
+  wt <- yearly_listw_data[[year]]
+  
+  nb <- yearly_nb_data[[year]]
   
   yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  fips <- order(yearly_data$ADM1_EN)
-  localMI <- localmoran(yearly_data$total_cases, rswm_q)
-  localMI_results[[year]] <- localMI 
-  print(paste('Local Moran I for year', year))
-  print(head(localMI))
-}
-
-```
-```{r}
-for (year in names(yearly_listw_data)) {
+  var <- yearly_data$total_cases
   
-  localMI <-localMI_results[[year]]
+  lisa <- yearly_data %>% 
+    mutate(local_moran = local_moran(
+      var, nb, wt, nsim = 99),
+           .before = 1) %>%
+    unnest(local_moran)
+  print(lisa)
 
-  printCoefmat(data.frame(
-    localMI[fips,], 
-    row.names=yearly_data$ADM1_EN[fips]),
-    check.names=FALSE)
-}
-```
-
-### 6.1.1 Mapping the local Moran’s I
-
-```{r}
-for (year in names(yearly_listw_data)) {
-  yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
-  
-  localMI <- localmoran(yearly_data$total_cases, rswm_q)
-  
-  yearly_data.localMI <- cbind(yearly_data, localMI) %>%
-    rename(Pr.Ii = Pr.z....E.Ii..) 
-
-  map <- tm_shape(yearly_data.localMI) +
-    tm_fill(col = "Ii", 
+  map <- tm_shape(lisa) +
+    tm_fill(col = "ii", 
             style = "pretty", 
             palette = "RdBu", 
             title = paste("Local Moran's I (Year:", year, ")")) +
@@ -652,25 +636,164 @@ for (year in names(yearly_listw_data)) {
   print(map)
 }
 ```
-### 6.1.2 Mapping the local Moran’s I p-values
+
+### 6.1.1 Mapping the local Moran’s I p-values
 ```{r}
+set.seed(1234)
 for (year in names(yearly_listw_data)) {
+  wt <- yearly_listw_data[[year]]
+  
+  nb <- yearly_nb_data[[year]]
+  
   yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year)
-  map <- tm_shape(yearly_data.localMI) +
-    tm_fill(col = "Pr.Ii", 
-            breaks=c(-Inf, 0.001, 0.01, 0.05, 0.1, Inf),
-            palette="-Blues", 
-            title = "local Moran's I p-values") +
-    tm_borders(alpha = 0.5)
-  print(map)
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
+  
+  var <- yearly_data$total_cases
+  
+  lisa <- yearly_data %>% 
+    mutate(local_moran = local_moran(
+      var, nb, wt, nsim = 99),
+           .before = 1) %>%
+    unnest(local_moran)
+  
+# Map for p-values of Local Moran's I
+map_p_value <- tm_shape(lisa) +
+  tm_fill(col = "p_ii", 
+          style = "pretty",
+          palette = "YlGnBu",
+          title = paste("Local Moran's I p-values (Year:", year, ")")) +
+  tm_borders(alpha = 0.5)
+
+print(map_p_value)
 }
 ```
 
 ## 6.2 Creating a LISA Cluster Map
 The LISA Cluster Map shows the significant locations color coded by type of spatial autocorrelation. The first step before we can generate the LISA cluster map is to plot the Moran scatterplot.
 
-### 6.2.1 Plotting Moran scatterplot
-The code chunk below plots the Moran scatterplot of total_cases for each year by using moran.plot() of spdep.
+### 6.2.3 Preparing LISA map classes and Plotting LISA map
 
+```{r}
+for (year in names(yearly_nb_data)) {
+  wt <- yearly_listw_data[[year]]
+  nb <- yearly_nb_data[[year]]
+  
+  # Get the yearly data and filter out "Phuket"
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
+  
+  # Calculate Local Moran's I
+  var <- yearly_data$total_cases
+  lisa <- yearly_data %>% 
+    mutate(local_moran = local_moran(var, nb, wt, nsim = 99),
+           .before = 1) %>%
+    unnest(local_moran)
+  
+  # Filter significant Local Moran's I results (p-value < 0.05)
+  lisa_sig <- lisa %>% filter(p_ii < 0.05)
+  
+  # Create the first map for Local Moran's I (with significant results highlighted)
+  m1 <- tm_shape(lisa) +
+    tm_polygons() +
+    tm_borders(alpha = 0.5) +
+    tm_shape(lisa_sig) +
+    tm_fill("p_ii", palette = "PuOr", midpoint = 0) +  # Use p_ii for coloring based on p-values
+    tm_borders(alpha = 0.4) +
+    tm_layout(main.title = paste("Local Moran's I - Significant (Year:", year, ")"))
+  
+  # Create the second map for a variable, e.g., total_cases, with quantiles
+  m2 <- tm_shape(lisa) +
+    tm_polygons("total_cases",  # Ensure the correct attribute is used here
+                palette = "Blues",
+                style = "quantile", n = 10) +
+    tm_layout(main.title = paste("Total Cases (Year:", year, ")"))
+
+  
+  # Arrange the two maps side by side
+  print(tmap_arrange(m1, m2, asp = 1, ncol = 2))
+}
+
+```
+
+# 7.0 Hot Spot and Cold Spot Area Analysis
+## 7.1 Getis and Ord’s G-Statistics
+Getis and Ord’s G-Statistics looks at neighbours within a defined proximity to identify where either high or low values clutser spatially. Here, statistically significant hot-spots are recognised as areas of high values where other areas within a neighbourhood range also share high values too.
+
+```{r}
+hcsa_list <- list()
+for (year in names(yearly_nb_data)) {
+  
+  wt <- yearly_listw_data[[year]]
+  nb <- yearly_nb_data[[year]]
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
+  var <- yearly_data$total_cases
+  
+  # Perform local G* statistics computation with permutation
+  hcsa <- yearly_data %>% 
+    cbind(local_gstar_perm(var, nb, wt, nsim = 99)) %>%
+    mutate("p_sim" = replace(`p_sim`, `p_sim` > 0.05, NA),
+           "gi_star" = ifelse(is.na(`p_sim`), NA, `gi_star`))
+  
+  # You can now store hcsa into a list or a data frame to keep track of results for each year
+  hcsa_list[[year]] <- hcsa
+}
+
+```
+
+```{r}
+for (year in names(yearly_nb_data)) {
+  hcsa <- hcsa_list[[year]]
+  map <- tm_shape(hcsa) +
+  tm_fill("gi_star", palette="PuOr", midpoint=0, title="Gi*") + 
+  tm_borders(alpha = 0.5)
+  print(map)
+}
+
+```
+### 7.1.1 Inverse Distance Neighbours and Weights
+```{r}
+hcsa_fd_results <- list()
+
+# Loop through each year
+for (year in names(yearly_nb_data)) {
+  
+  # Get the yearly data and filter out "Phuket"
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year, ADM1_EN != "Phuket")
+  
+  # Coordinates for spatial calculations
+  coords <- cbind(
+  map_dbl(yearly_data$geometry, ~st_centroid(.x)[[1]]), 
+  map_dbl(yearly_data$geometry, ~st_centroid(.x)[[2]])
+  )
+  wm_q.nb <- yearly_nb_data[[year]]
+  k1dists <- st_nb_dists(coords, wm_q.nb)
+  print(summary(unlist(k1dists)))
+  
+  # 1. Fixed distance band for "fd" (0.04 degrees)
+  wm_fd.nb <- st_dist_band(coords, lower = 0, upper = 0.04)
+  wm_fd.wt <- st_inverse_distance(wm_fd.nb, yearly_data$geometry)
+  
+  # Compute the local G* statistics using the fixed distance band weights
+  hcsa_fd <- yearly_data %>%
+    cbind(local_gstar_perm(yearly_data$total_cases, wm_fd.nb, wm_fd.wt, nsim = 99)) %>%
+    mutate("p_sim" = replace(`p_sim`, `p_sim` > 0.05, NA),
+           "gi_star" = ifelse(is.na(`p_sim`), NA, `gi_star`))
+  
+  # Store the result in the list
+  hcsa_fd_results[[year]] <- hcsa_fd
+}
+
+```
+
+```{r}
+for (year in names(yearly_nb_data)) {
+  hcsa_fd <- hcsa_fd_results[[year]]
+  map <- tm_shape(hcsa_fd) +
+  tm_fill("gi_star", palette="PuOr", midpoint=0, title="Gi*") + 
+  tm_borders(alpha = 0.5)
+  print(map)
+}
+```
 
