@@ -598,5 +598,79 @@ for (year in names(yearly_geary_mc_results)) {
 
 # 6.0 Local Measures of Spatial Autocorrelation
 
-# 6.1 Computing local Moran’s I
+## 6.1 Computing local Moran’s I
+```{r}
+localMI_results <- list()
+
+set.seed(1234)
+
+for (year in names(yearly_listw_data)) {
+  
+  rswm_q <- yearly_listw_data[[year]]
+  
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  
+  fips <- order(yearly_data$ADM1_EN)
+  localMI <- localmoran(yearly_data$total_cases, rswm_q)
+  localMI_results[[year]] <- localMI 
+  print(paste('Local Moran I for year', year))
+  print(head(localMI))
+}
+
+```
+```{r}
+for (year in names(yearly_listw_data)) {
+  
+  localMI <-localMI_results[[year]]
+
+  printCoefmat(data.frame(
+    localMI[fips,], 
+    row.names=yearly_data$ADM1_EN[fips]),
+    check.names=FALSE)
+}
+```
+
+### 6.1.1 Mapping the local Moran’s I
+
+```{r}
+for (year in names(yearly_listw_data)) {
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  
+  localMI <- localmoran(yearly_data$total_cases, rswm_q)
+  
+  yearly_data.localMI <- cbind(yearly_data, localMI) %>%
+    rename(Pr.Ii = Pr.z....E.Ii..) 
+
+  map <- tm_shape(yearly_data.localMI) +
+    tm_fill(col = "Ii", 
+            style = "pretty", 
+            palette = "RdBu", 
+            title = paste("Local Moran's I (Year:", year, ")")) +
+    tm_borders(alpha = 0.5)
+  print(map)
+}
+```
+### 6.1.2 Mapping the local Moran’s I p-values
+```{r}
+for (year in names(yearly_listw_data)) {
+  yearly_data <- drug_offense_summary_all_cases %>%
+    filter(fiscal_year == year)
+  map <- tm_shape(yearly_data.localMI) +
+    tm_fill(col = "Pr.Ii", 
+            breaks=c(-Inf, 0.001, 0.01, 0.05, 0.1, Inf),
+            palette="-Blues", 
+            title = "local Moran's I p-values") +
+    tm_borders(alpha = 0.5)
+  print(map)
+}
+```
+
+## 6.2 Creating a LISA Cluster Map
+The LISA Cluster Map shows the significant locations color coded by type of spatial autocorrelation. The first step before we can generate the LISA cluster map is to plot the Moran scatterplot.
+
+### 6.2.1 Plotting Moran scatterplot
+The code chunk below plots the Moran scatterplot of total_cases for each year by using moran.plot() of spdep.
+
 
