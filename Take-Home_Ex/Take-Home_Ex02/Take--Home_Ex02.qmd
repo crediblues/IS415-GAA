@@ -223,16 +223,13 @@ drug_abuse_indicators_summary
 ```
 
 ```{r}
-# Get unique fiscal years
 years <- unique(drug_abuse_indicators_summary$fiscal_year)
 
 # Loop through each year to create and save individual plots
 for (year in years) {
-  # Filter data for the current year
   year_data <- drug_abuse_indicators_summary %>%
     filter(fiscal_year == year)
   
-  # Create the plot
   p <- ggplot(year_data, aes(x = ADM1_EN, y = total_cases, fill = types_of_drug_offenses)) +
     geom_col(position = position_dodge(width = 0.9), width = 0.7) +  # Create bars for total cases
     labs(title = paste("Distribution of Drug Abuse Indicators in", year),
@@ -240,12 +237,10 @@ for (year in years) {
          y = "Total Cases",
          fill = "Type of Drug Offense") +
     theme_minimal() +  # Use a minimal theme
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4),  # Rotate x-axis labels for readability
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 4),
           legend.position = "right",
           legend.text = element_text(size = 4)) +
-    scale_fill_brewer(palette = "Set3")  # Optional: Set a color palette for better visibility
-  
-  # Print the plot
+    scale_fill_brewer(palette = "Set3")
   print(p)
 }
 
@@ -261,19 +256,15 @@ drug_offense_summary_all_cases <- thai_province %>%
   summarise(total_cases = sum(no_cases, na.rm = TRUE),
             geometry = first(geometry), .groups = 'drop')
 
-# View the summarized data
 print(drug_offense_summary_all_cases)
 ```
 
 
 ```{r}
 tmap_mode('plot')
-# Get unique fiscal years
 years <- unique(drug_offense_summary_all_cases$fiscal_year)
 
-# Loop through each year to create and display maps
 for (year in years) {
-  # Filter data for the current year
   year_data <- drug_offense_summary_all_cases[drug_offense_summary_all_cases$fiscal_year == year, ]
   
   # Create a map with equal interval classification
@@ -294,10 +285,8 @@ for (year in years) {
     tm_borders(alpha = 0.5) +
     tm_layout(main.title = paste("Quantile -", year), title.size = 0.5)
   
-  # Arrange the two maps side by side
   tmap_arranged <- tmap_arrange(equal, quantile, asp = 1, ncol = 2)
   
-  # Print the arranged map
   print(tmap_arranged)
 }
 
@@ -314,7 +303,6 @@ In the code chunk below, st_neighbors() from sfdep package is used to compute co
 
 The code chunk below is used to compute Queen contiguity weight matrix.
 ```{r}
-# Create an empty list to store results for each year
 yearly_nb_data <- list()
 
 # Loop through each fiscal year
@@ -326,7 +314,6 @@ for (year in unique(drug_offense_summary_all_cases$fiscal_year)) {
 
   yearly_nb_data[[as.character(year)]] <- wm_sf
   
-  # Print summary for each year
   print(paste("Summary for year", year))
   print(summary(wm_sf))
 }
@@ -338,22 +325,19 @@ Phuket is the disconnected province, which makes sense geographically, as Phuket
 ```{r}
 for (year in unique(drug_offense_summary_all_cases$fiscal_year)) {
   
-  # Filter data for the current year and exclude Phuket (ADM1_EN == "Phuket")
   yearly_data <- drug_offense_summary_all_cases %>%
     filter(fiscal_year == year, ADM1_EN != "Phuket")
   
-  # Create the spatial neighbors list for the filtered data
   wm_sf <- st_contiguity(yearly_data, queen = TRUE) 
   
-  # Store the results in the yearly_nb_data list
   yearly_nb_data[[as.character(year)]] <- wm_sf
   
-  # Print summary for each year
   print(paste("Summary for year", year))
   print(summary(wm_sf))
 }
 
 ```
+Now, let's calculate the Weights.
 ```{r}
 yearly_listw_data <- list()
 
@@ -375,6 +359,9 @@ for (year in names(yearly_nb_data)) {
 ```
 
 ## 5.2 Global Measures of Spatial Autocorrelation: Moran’s I
+The code performs Global Moran's I tests to measure spatial autocorrelation of drug offense cases for each year. For each year, it filters the data and calculates Moran's I using neighborhood weights and adjacency relations. The Moran's I statistic assesses whether high or low values of drug offense cases are clustered spatially or randomly distributed. The results for each year are stored in a list, providing insight into the spatial patterns of drug offenses over time.
+
+global_moran() of the sfdep package is used.
 ```{r}
 moran_results <- list()
 
@@ -400,6 +387,12 @@ for (year in names(yearly_nb_data)) {
 ```
 Positive Moran's I values indicate a tendency for similar values (in this case, total_cases) to cluster in space, suggesting spatial autocorrelation.
 Significant p-values (typically less than 0.05) indicate that the observed spatial autocorrelation is statistically significant. All years showed significant results, suggesting consistent clustering of drug offense cases over the years analyzed.
+
+This indicates that areas with high (or low) levels of drug offenses tend to be spatially clustered, rather than randomly distributed.
+
+The Moran’s I values increase over the years, particularly in 2021 (0.200) and 2022 (0.201), suggesting that clustering of similar drug offense levels became stronger in the later years.
+The values of K, representing the total number of cases, decrease over time, possibly indicating fewer drug offenses, but more pronounced spatial clustering as the years progress.
+The increasing Moran's I values suggest a growing spatial pattern of clustering in drug-related activity.
 
 ### 5.2.1 Computing and Visualising Global Moran’s I
 The Global Moran’s I test, which can be implemented using the global_moran_test() function from the sfdep package, is a method for testing spatial autocorrelation
@@ -435,6 +428,8 @@ The positive Moran's I statistic indicates that areas with higher counts of tota
 
 The consistency of the Moran’s I statistic, standard deviate, and p-value across all years from 2017 to 2022 indicates that the spatial autocorrelation of total_cases has persisted over time. This could point to ongoing or systematic issues related to drug offenses in specific areas.
 ### 5.2.2 Performing Global Moran’s permutation test
+The Global Moran’s permutation test was conducted for each year between 2017 and 2022 using 999 simulations to assess the significance of spatial autocorrelation in drug offense cases across Thailand. By comparing observed Moran's I values to a reference distribution generated through random permutations, the test provides a more robust measure of spatial clustering. The results, stored in gmoranMC_results, help to validate the significance of the observed spatial patterns and determine if the clustering of high or low drug offense cases is due to random chance or a real spatial process.
+
 ```{r}
 gmoranMC_results <- list()
 
@@ -460,6 +455,8 @@ for (year in names(yearly_nb_data)) {
   print(gmoranMCresult)
 }
 ```
+Stronger significance is observed in 2019, 2021, and 2022, suggesting clustering of drug offenses. 2018 and 2020 show weaker evidence of spatial clustering.
+
 ```{r}
 for (year in names(yearly_nb_data)) {
   gmoranMC <- gmoranMC_results[[year]]
@@ -508,35 +505,23 @@ Values less than 1 indicate positive spatial autocorrelation (neighboring areas 
 Values greater than 1 suggest negative spatial autocorrelation (neighboring areas have dissimilar values), meaning that nearby regions tend to have different drug offense totals.
 
 Breakdown of Results:
-2017:
-Geary's C = 0.99196, p-value = 0.4767
-The Geary's C value is close to 1, suggesting little to no spatial autocorrelation. The p-value indicates that there is no statistically significant spatial autocorrelation in drug offense totals for this year.
+The Geary's C test results for the years 2017 to 2022 provide an assessment of spatial autocorrelation, with a focus on local dissimilarities between neighboring regions:
 
-2018:
-Geary's C = 1.00139, p-value = 0.5041
-The Geary's C value is slightly above 1, but still very close to 1, suggesting no significant spatial autocorrelation. The p-value is not significant.
-
-2019:
-Geary's C = 0.92999, p-value = 0.2732
-The Geary’s C value is less than 1, indicating a weak positive spatial autocorrelation (regions with similar drug offense totals are more likely to be adjacent). However, the p-value indicates that this effect is not statistically significant.
-
-2020:
-Geary's C = 0.94641, p-value = 0.3021
-Similar to 2019, the Geary’s C statistic is less than 1, suggesting weak positive spatial autocorrelation, but again the p-value is not statistically significant.
-
-2021:
-Geary's C = 0.86448, p-value = 0.06197
-The Geary's C value is lower than 1, suggesting stronger positive spatial autocorrelation compared to previous years. The p-value (0.06197) is approaching significance at the 0.05 level, indicating a possible spatial pattern in drug offenses.
-
-2022:
-Geary's C = 0.84715, p-value = 0.03203
-The Geary's C value is notably less than 1, indicating stronger positive spatial autocorrelation for this year. The p-value (0.03203) is statistically significant, meaning that for 2022, there is significant evidence of spatial clustering in drug offense totals.
+2017: Geary's C statistic is 1.002 with a p-value of 0.506, suggesting no significant spatial autocorrelation.
+2018: Geary's C statistic is 1.007 with a p-value of 0.519, indicating no significant spatial autocorrelation.
+2019: Geary's C statistic is 0.934 with a p-value of 0.288, showing no significant spatial autocorrelation.
+2020: Geary's C statistic is 0.955 with a p-value of 0.333, indicating no significant spatial autocorrelation.
+2021: Geary's C statistic is 0.868 with a p-value of 0.069, suggesting moderate spatial autocorrelation, significant at the 10% level.
+2022: Geary's C statistic is 0.855 with a p-value of 0.041, indicating significant spatial autocorrelation at the 5% level.
 
 No strong spatial autocorrelation is found for most years, except for 2021 and 2022, where the data suggests positive spatial autocorrelation (regions with similar drug offense totals are likely to be near each other).
 The spatial pattern is particularly significant in 2022, where the p-value indicates that neighboring regions are likely to have similar drug offense totals, showing statistically significant spatial clustering.
 2021 also shows potential clustering, with a p-value close to 0.05, suggesting a trend towards spatial autocorrelation.
 
 ### 5.3.2 Computing Monte Carlo Geary’s C
+Monte Carlo simulations for Geary's C statistic were performed for each year from 2017 to 2022, using 999 simulations. This approach provides a robust measure of local spatial autocorrelation by comparing observed dissimilarities between neighboring regions to a random distribution. 
+
+global_c_perm() of sfdep is used.
 ```{r}
 set.seed(1234)
 
@@ -565,12 +550,11 @@ for (year in names(yearly_listw_data)) {
 }
 
 ```
-For years 2017, 2018, 2019, and 2020: 
-- High p-values (>0.05) indicate that there is no significant evidence to reject the null hypothesis, suggesting that there is no significant spatial clustering of total cases.
+For years 2017, 2018, 2019, 2020: High p-values (>0.05) indicate no significant evidence to reject the null hypothesis, suggesting no significant spatial clustering of total cases.
 
-For year 2021: 
-- A p-value of 0.102 is approaching significance, indicating some evidence of spatial clustering but not strong enough to conclude.
-Year 2022: The p-value of 0.052 is very close to the significance threshold (0.05), indicating a potential trend toward spatial clustering of total cases, warranting further investigation.
+For year 2021: The p-value of 0.063 is still approaching significance, indicating some evidence of spatial clustering but not strong enough to conclude definitively.
+
+For year 2022: The p-value of 0.05 is right at the significance threshold, suggesting a potential trend toward spatial clustering of total cases.
 
 
 ```{r}
@@ -578,16 +562,13 @@ Year 2022: The p-value of 0.052 is very close to the significance threshold (0.0
 for (year in names(yearly_geary_mc_results)) {
   bperm <- yearly_geary_mc_results[[year]]
   
-  # Calculate mean and variance of simulated values
   mean_value <- mean(bperm$res[1:999])
   var_value <- var(bperm$res[1:999])
   
-  # Print summary statistics
   summary_stats <- summary(bperm$res[1:999])
   print(paste("Summary statistics for year", year))
   print(summary_stats)
   
-  # Create histogram
   hist(bperm$res, 
        freq=TRUE, 
        breaks=20, 
@@ -636,6 +617,14 @@ for (year in names(yearly_nb_data)) {
   print(map)
 }
 ```
+The maps reveal consistent spatial autocorrelation patterns over the three years, particularly highlighting Bangkok and southern Thailand as areas of strong positive clustering. Over time, the extent of provinces with strong spatial clustering appears to have slightly increased in 2019. The central and northern regions consistently show weaker spatial autocorrelation, with certain provinces exhibiting negative spatial autocorrelation values, reflecting spatial dissimilarity.
+
+These maps suggest that there are persistent spatial patterns in drug offenses over time, with certain regions consistently exhibiting higher clustering.
+
+Over the years from 2020 to 2022, there is a noticeable shift in drug offense spatial patterns:
+2020: Spatial clustering was primarily concentrated in the south, around Bangkok.
+2021: The focus shifts towards the northeast, indicating new regional clusters.
+2022: The northeast becomes a significant area of high drug offenses, further reinforcing a shift in the spatial distribution pattern of offenses.
 
 ### 6.1.1 Mapping the local Moran’s I p-values
 ```{r}
@@ -678,7 +667,6 @@ for (year in names(yearly_nb_data)) {
   wt <- yearly_listw_data[[year]]
   nb <- yearly_nb_data[[year]]
   
-  # Get the yearly data and filter out "Phuket"
   yearly_data <- drug_offense_summary_all_cases %>%
     filter(fiscal_year == year, ADM1_EN != "Phuket")
   
@@ -689,27 +677,22 @@ for (year in names(yearly_nb_data)) {
            .before = 1) %>%
     unnest(local_moran)
   
-  # Filter significant Local Moran's I results (p-value < 0.05)
   lisa_sig <- lisa %>% filter(p_ii < 0.05)
   
-  # Create the first map for Local Moran's I (with significant results highlighted)
   m1 <- tm_shape(lisa) +
     tm_polygons() +
     tm_borders(alpha = 0.5) +
     tm_shape(lisa_sig) +
-    tm_fill("p_ii", palette = "PuOr", midpoint = 0) +  # Use p_ii for coloring based on p-values
+    tm_fill("p_ii", palette = "PuOr", midpoint = 0) + 
     tm_borders(alpha = 0.4) +
     tm_layout(main.title = paste("Local Moran's I - Significant (Year:", year, ")"))
   
-  # Create the second map for a variable, e.g., total_cases, with quantiles
   m2 <- tm_shape(lisa) +
-    tm_polygons("total_cases",  # Ensure the correct attribute is used here
+    tm_polygons("total_cases",  
                 palette = "Blues",
                 style = "quantile", n = 10) +
     tm_layout(main.title = paste("Total Cases (Year:", year, ")"))
 
-  
-  # Arrange the two maps side by side
   print(tmap_arrange(m1, m2, asp = 1, ncol = 2))
 }
 
@@ -718,6 +701,11 @@ for (year in names(yearly_nb_data)) {
 # 7.0 Hot Spot and Cold Spot Area Analysis
 ## 7.1 Getis and Ord’s G-Statistics
 Getis and Ord’s G-Statistics looks at neighbours within a defined proximity to identify where either high or low values clutser spatially. Here, statistically significant hot-spots are recognised as areas of high values where other areas within a neighbourhood range also share high values too.
+
+Positive Gi* values (purple shades) indicate high clustering (hot spots) of drug offenses in certain provinces.
+
+Negative Gi* values (orange shades) suggest cold spots, i.e., areas with significantly low counts of offenses.
+
 
 ```{r}
 hcsa_list <- list()
@@ -729,13 +717,11 @@ for (year in names(yearly_nb_data)) {
     filter(fiscal_year == year, ADM1_EN != "Phuket")
   var <- yearly_data$total_cases
   
-  # Perform local G* statistics computation with permutation
   hcsa <- yearly_data %>% 
     cbind(local_gstar_perm(var, nb, wt, nsim = 99)) %>%
-    mutate("p_sim" = replace(`p_sim`, `p_sim` > 0.05, NA),
+    mutate("p_sim" = replace(`p_sim`, `p_sim` > 0.1, NA),
            "gi_star" = ifelse(is.na(`p_sim`), NA, `gi_star`))
   
-  # You can now store hcsa into a list or a data frame to keep track of results for each year
   hcsa_list[[year]] <- hcsa
 }
 
@@ -751,49 +737,58 @@ for (year in names(yearly_nb_data)) {
 }
 
 ```
-### 7.1.1 Inverse Distance Neighbours and Weights
+
+The consistent hot spot in Bangkok (and surrounding regions) and shifting cold spots in northern Thailand indicate a stable pattern of high drug-related activity in urban areas.
+Some variability in low-activity zones, potentially influenced by evolving local conditions.
+
+## 7.2 Cluster Persistance
+By dentifying the number of times a province was classified as a hot or cold spot, we can try to visualize the results through a heatmap of persistence. 
 ```{r}
-hcsa_fd_results <- list()
+hcsa_list_no_geom <- lapply(hcsa_list, function(x) st_set_geometry(x, NULL))
 
-# Loop through each year
-for (year in names(yearly_nb_data)) {
-  
-  # Get the yearly data and filter out "Phuket"
-  yearly_data <- drug_offense_summary_all_cases %>%
-    filter(fiscal_year == year, ADM1_EN != "Phuket")
-  
-  # Coordinates for spatial calculations
-  coords <- cbind(
-  map_dbl(yearly_data$geometry, ~st_centroid(.x)[[1]]), 
-  map_dbl(yearly_data$geometry, ~st_centroid(.x)[[2]])
-  )
-  wm_q.nb <- yearly_nb_data[[year]]
-  k1dists <- st_nb_dists(coords, wm_q.nb)
-  print(summary(unlist(k1dists)))
-  
-  # 1. Fixed distance band for "fd" (0.04 degrees)
-  wm_fd.nb <- st_dist_band(coords, lower = 0, upper = 0.04)
-  wm_fd.wt <- st_inverse_distance(wm_fd.nb, yearly_data$geometry)
-  
-  # Compute the local G* statistics using the fixed distance band weights
-  hcsa_fd <- yearly_data %>%
-    cbind(local_gstar_perm(yearly_data$total_cases, wm_fd.nb, wm_fd.wt, nsim = 99)) %>%
-    mutate("p_sim" = replace(`p_sim`, `p_sim` > 0.05, NA),
-           "gi_star" = ifelse(is.na(`p_sim`), NA, `gi_star`))
-  
-  # Store the result in the list
-  hcsa_fd_results[[year]] <- hcsa_fd
-}
+persistence_df <- hcsa_list_no_geom %>%
+  purrr::reduce(full_join, by = "ADM1_EN", suffix = c("", "_next")) %>%
+  rowwise() %>%
+  mutate(
+    hot_count = sum(c_across(contains("gi_star")) > 0, na.rm = TRUE),
+    cold_count = sum(c_across(contains("gi_star")) < 0, na.rm = TRUE),
+    neutral_count = sum(is.na(c_across(contains("gi_star"))))
+  ) %>%
+  ungroup()
 
+print(persistence_df[, c("ADM1_EN", "hot_count", "cold_count", "neutral_count")])
+
+
+```
+```{r}
+base_sf <- hcsa_list[[1]] 
+
+# Perform a spatial join with the persistence data
+persistence_sf <- base_sf %>%
+  left_join(persistence_df, by = "ADM1_EN")
 ```
 
 ```{r}
-for (year in names(yearly_nb_data)) {
-  hcsa_fd <- hcsa_fd_results[[year]]
-  map <- tm_shape(hcsa_fd) +
-  tm_fill("gi_star", palette="PuOr", midpoint=0, title="Gi*") + 
-  tm_borders(alpha = 0.5)
-  print(map)
-}
-```
+hot_persistence_map <- tm_shape(persistence_sf) +
+  tm_polygons(
+    "hot_count", palette = "Purples", title = "Hot Spot Persistence",
+    style = "cont", border.alpha = 0.5
+  ) +
+  tm_layout(main.title = "Hot Spot Persistence Across Years")
 
+print(hot_persistence_map)
+
+# Cold Spot Persistence Map
+cold_persistence_map <- tm_shape(persistence_sf) +
+  tm_polygons(
+    "cold_count", palette = "Oranges", title = "Cold Spot Persistence",
+    style = "cont", border.alpha = 0.5
+  ) +
+  tm_layout(main.title = "Cold Spot Persistence Across Years")
+
+print(cold_persistence_map)
+
+```
+Bangkok and nearby provinces seem to be consistent hot spots over the years and other areas show some sporadic clustering, but with lower persistence.
+
+Persistent cold spots are clustered aorund northern Thailand.
