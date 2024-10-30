@@ -1,0 +1,106 @@
+---
+title: "In-Class Exercise 10"
+author: "Ooi Wen Xian"
+date: "September 28, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+---
+
+# Data Set-Up
+
+```{r}
+pacman::p_load(olsrr, corrplot, ggpubr, sf, spdep, GWmodel, tmap, tidyverse, gtsummary, performance)
+```
+
+```{r}
+mpsz = st_read(dsn = "data/geospatial", layer = "MP14_SUBZONE_WEB_PL")
+```
+
+```{r}
+mpsz_svy21 <- st_transform(mpsz, 3414)
+st_crs(mpsz_svy21)
+```
+
+```{r}
+condo_resale = read_csv("data/aspatial/Condo_resale_2015.csv")
+```
+
+```{r}
+condo_resale.sf <- st_as_sf(condo_resale,
+                            coords = c("LONGITUDE", "LATITUDE"),
+                            crs=4326) %>%
+  st_transform(crs=3414)
+```
+
+```{r}
+condo_resale.sf <- condo_resale.sf %>%
+  mutate(`LOG_SELLING_PRICE` = log(SELLING_PRICE))
+```
+
+```{r}
+condo.mlr <- lm(formula = SELLING_PRICE ~ AREA_SQM + AGE    + 
+                  PROX_CBD + PROX_CHILDCARE + PROX_ELDERLYCARE +
+                  PROX_URA_GROWTH_AREA + PROX_HAWKER_MARKET + PROX_KINDERGARTEN + 
+                  PROX_MRT  + PROX_PARK + PROX_PRIMARY_SCH + 
+                  PROX_TOP_PRIMARY_SCH + PROX_SHOPPING_MALL + PROX_SUPERMARKET + 
+                  PROX_BUS_STOP + NO_Of_UNITS + FAMILY_FRIENDLY + FREEHOLD, 
+                data=condo_resale.sf)
+summary(condo.mlr)
+```
+
+```{r}
+condo.mlr1 <- lm(formula = SELLING_PRICE ~ AREA_SQM + AGE + 
+                   PROX_CBD + PROX_CHILDCARE + PROX_ELDERLYCARE +
+                   PROX_URA_GROWTH_AREA + PROX_MRT  + PROX_PARK + 
+                   PROX_PRIMARY_SCH + PROX_SHOPPING_MALL    + PROX_BUS_STOP + 
+                   NO_Of_UNITS + FAMILY_FRIENDLY + FREEHOLD,
+                 data=condo_resale.sf)
+olssr_condo <- ols_regress(condo.mlr1)
+olssr_condo
+```
+
+```{r}
+condo_fw_mlr <- ols_step_forward_p(condo.mlr1, p_val = 0.05, details = FALSE)
+condo_fw_mlr
+```
+
+```{r}
+condo_bw_mlr <- ols_step_backward_p(condo.mlr1, p_val = 0.05, details = FALSE)
+condo_bw_mlr
+```
+
+```{r}
+condo_bdw_mlr <- ols_step_both_p(condo.mlr1, p_val = 0.05, details = FALSE)
+condo_bdw_mlr
+```
+
+```{r}
+metric <- compare_performance(condo.mlr1, condo_fw_mlr$model, condo_bw_mlr$model, condo_bdw_mlr$model)
+
+metric$Name <- gsub(".*\\\\([a-zA-Z0-9_]+)\\\\, \\\\model\\\\.*", "\\1", metric$Name)
+```
+
+```{plot(metric)}
+```
+
+```{r}
+check_collinearity(condo_bdw_mlr$model)
+```
+
+```{r}
+out <- plot(check_model(condo_bdw_mlr$model, panel = FALSE))
+out[[2]]
+```
+
+```{r}
+outliers <- check_outliers(condo_bdw_mlr$model, method = "cook")
+plot(outliers)
+```
+
+```{r}
+mlr_output <- as.data.frame(condo_fw_mlr$model$residuals) %>%
+  rename('FW_MLR_RES' = 'condo_fw_mlr$model$residuals')
+```
