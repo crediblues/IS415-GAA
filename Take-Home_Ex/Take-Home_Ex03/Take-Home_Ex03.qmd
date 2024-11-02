@@ -1,0 +1,368 @@
+---
+title: "Take-Home Exercise 3"
+subtitle: "Prototyping Modules for Geospatial Analytics Shiny Application"
+author: "Ooi Wen Xian"
+date: "September 27, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+---
+
+# Overview
+
+The increasing demand for eldercare facilities in Singapore highlights the importance of effective spatial planning and resource allocation. Understanding the distribution and accessibility of these facilities is crucial for both policymakers and community planners to ensure that eldercare services are adequately provided to the aging population.
+
+This project focuses on conducting a second-order spatial point pattern analysis to investigate the spatial relationships between eldercare facilities across Singapore. By employing spatial statistical methods, we aim to identify patterns in the distribution of these facilities and assess whether they are clustered, dispersed, or randomly located within the urban landscape.
+
+# Package Installation
+
+For this exercise, the following R packages would be used.
+
+-   [**sf**](https://r-spatial.github.io/sf/), a relatively new R package specially designed to import, manage and process vector-based geospatial data in R.
+
+-   [**spatstat**](https://spatstat.org/), which has a wide range of useful functions for point pattern analysis. In this hands-on exercise, it will be used to perform 1st- and 2nd-order spatial point patterns analysis and derive kernel density estimation (KDE) layer.
+
+-   [**raster**](https://cran.r-project.org/web/packages/raster/) which reads, writes, manipulates, analyses and model of gridded spatial data (i.e. raster). In this hands-on exercise, it will be used to convert image output generate by spatstat into raster format.
+
+-   [**maptools**](https://cran.r-project.org/web/packages/maptools/index.html) which provides a set of tools for manipulating geographic data. In this hands-on exercise, we mainly use it to convert *Spatial* objects into *ppp* format of **spatstat**.
+
+-   [**tmap**](https://cran.r-project.org/web/packages/tmap/index.html) which provides functions for plotting cartographic quality static point patterns maps or interactive maps by using [leaflet](https://leafletjs.com/) API.
+
+```{r}
+pacman::p_load(sf, raster, spatstat, tmap, tidyverse)
+```
+
+# Data Preparation
+
+The datasets utilised are listed as follows:
+
+-   URA's Singapore Master Plan 2014 Subzone Boundary (No Sea) - shp format
+
+-   MOH's Location of CHAS Clinics - geojson format
+
+-   MOH's Location of eldercare services - shp format
+
+## Import Geospatial Data
+
+Importing URA's Singapore Master Plan 2014 Subzone Boundary (No Sea)
+
+```{r}
+sg_sf <- st_read(dsn = "data/geospatial", layer="MP14_SUBZONE_NO_SEA_PL")
+```
+
+Importing MOH's Location of eldercare services
+
+```{r}
+eldercare_sf <- st_read(dsn = "data/geospatial", layer="ELDERCARE")
+```
+
+Importing MOH's Location of CHAS Clinics
+
+```{r}
+chasclinics_sf <- st_read("data/geospatial/CHASClinics.geojson") %>% st_transform(crs = 3414)
+```
+
+Check if all 3 geospatial datasets have the same coordinate systems.
+
+```{r}
+print("sg_sf")
+st_crs(sg_sf)
+print("eldercare_sf")
+st_crs(eldercare_sf)
+print("chasclinics_sf")
+st_crs(chasclinics_sf)
+```
+
+We would need to assign the correct CRS to sg_sf and eldercare_sf and reproject chasclinics_sf from wgs to SVY21 / Singapore TM
+
+st_set_crs() and st_transform() of sf package is used as shown below.
+
+```{r}
+sg_sf <- st_set_crs(sg_sf, 3414)
+eldercare_sf <- st_set_crs(eldercare_sf, 3414)
+chasclinics_sf <- st_transform(chasclinics_sf,crs = 3414)
+
+print("sg_sf")
+st_crs(sg_sf)
+print("eldercare_sf")
+st_crs(eldercare_sf)
+print("chasclinics_sf")
+st_crs(chasclinics_sf)
+```
+
+## Geospatial Data Wrangling
+
+### SIngapore Boundary Data
+
+#### Creating *owin* object
+
+```{r}
+sg_owin <- as.owin(sg_sf)
+plot(sg_owin)
+```
+
+```{r}
+summary(sg_owin)
+```
+
+### Eldercare facilities
+
+#### Converting from sf format into spatstat’s ppp format
+
+```{r}
+eldercare_ppp <- as.ppp(eldercare_sf)
+eldercare_ppp
+```
+
+```{r}
+plot(eldercare_ppp)
+```
+
+```{r}
+summary(eldercare_ppp)
+```
+
+Checking for duplicates
+
+```{r}
+any(duplicated(eldercare_ppp))
+```
+
+```{r}
+multiplicity(eldercare_ppp)
+```
+
+```{r}
+sum(multiplicity(eldercare_ppp) > 1)
+```
+
+There are no duplicated point events.
+
+#### Combining point events object and owin object
+
+Let's extract eldercare events that are located within Singapore by using the code chunk below.
+
+```{r}
+eldercareSG_ppp = eldercare_ppp[sg_owin]
+summary(eldercareSG_ppp)
+```
+
+```{r}
+plot(eldercareSG_ppp)
+```
+
+### Chas Clinics
+
+#### Converting from sf format into spatstat’s ppp format
+
+```{r}
+chasclinics_ppp <- as.ppp(chasclinics_sf)
+chasclinics_ppp
+```
+
+#### Combining point events object and owin object
+
+Let's extract chas clinic events that are located within Singapore by using the code chunk below.
+
+```{r}
+chasclinicsSG_ppp = chasclinics_ppp[sg_owin]
+summary(chasclinicsSG_ppp)
+
+```
+
+```{r}
+any(duplicated(chasclinics_ppp))
+```
+
+# EDA
+
+## Visualising eldercare places
+
+```{r}
+tmap_mode("view")
+tmap_options(check.and.fix = TRUE)
+tm_shape(sg_sf)+tm_polygons()+tm_shape(eldercare_sf)+tm_dots()
+```
+
+## Visualising chas clinics
+
+```{r}
+tmap_mode("view")
+tmap_options(check.and.fix = TRUE)
+tm_shape(sg_sf)+tm_polygons()+tm_shape(chasclinics_sf)+tm_dots()
+```
+
+## UI Design: Shiny Storyboard
+
+![](images/EDA%20(1).png)
+
+**Calibration Parameters**
+
+| Parameter        | Type                    | Filter Options                                                     |
+|---------|---------|------------------------------------------------------|
+| Spatial Unit     | Single Select, dropdown | `region` , `planning area`                                         |
+| Variable         | Multi-select, dropdown  | `All`, `chas clinics, eldercare services`                          |
+| Area of Interest | Multi-select, dropdown  | `Overall Singapore` , `specific region` , `specific planning area` |
+
+```{r}
+pg <- sg_sf %>%
+  filter(PLN_AREA_N == "BUKIT MERAH")
+par(mfrow=c(2,2))
+plot(pg, main = "BUKIT MERAH", max.plot = 15)
+
+```
+
+```{r}
+pg_owin = as.owin(pg)
+```
+
+```{r}
+eldercare_pg_ppp = eldercare_ppp[pg_owin]
+```
+
+```{r}
+eldercare_pg_ppp.km = rescale(eldercare_pg_ppp, 1000, "km")
+```
+
+```{r}
+plot(eldercare_pg_ppp.km, main="BUKIT MERAH")
+
+```
+
+# 2nd Order Spatial Point Pattern Analysis
+
+## Uni-variate K-function (Eldercare Facilities Only)
+
+Assuming user chooses to view the K-function for eldercare facilities:
+
+-   spatial unit: planning area
+
+-   area of interest: bukit merah
+
+-   correction: Ripley
+
+Data Wrangling before K-function plot
+
+```{r}
+AOI <- sg_sf %>%
+  filter(PLN_AREA_N == "BUKIT MERAH")
+AOI_owin = as.owin(AOI)
+eldercare_AOI_ppp = eldercare_ppp[AOI_owin]
+```
+
+```{r}
+# Compute the K-function with Ripley correction
+K_AOI <- Kest(eldercare_AOI_ppp, correction = "Ripley")
+
+# Plot K(d) - r with additional formatting
+plot(K_AOI, . - r ~ r, ylab= "K(d) - r", xlab = "Distance d (m)",
+     main = "Univariate K-function for Eldercare Facilities",
+     legend = TRUE)
+abline(h = 0, col = "gray", lty = 2) # Adds a reference line at zero
+
+```
+
+Performing Complete Spatial Randomness Test
+
+```{r}
+K_AOI.csr <- envelope(eldercare_AOI_ppp, Kest, nsim = 99, rank = 1, glocal=TRUE)
+
+```
+
+```{r}
+plot(K_AOI.csr, . - r ~ r, xlab="d", ylab="K(d)-r")
+
+```
+
+### UI Design: Shiny Storyboard
+
+![](images/SPPA (2).png)
+
+**Calibration Parameters for Uni-variate K-function**
+
+| Parameter             | Type                    | Filter Options                                                                                                                                                                                      |
+|--------------|--------------|--------------------------------------------|
+| Spatial Unit          | Single-select, dropdown | `region` , `planning area`                                                                                                                                                                          |
+| Area of Interest      | Multi-select, dropdown  | `Overall Singapore` , `specific region` , `specific planning area`                                                                                                                                  |
+| Variable              | Multi-select, dropdown  | `chas clinics, eldercare services`                                                                                                                                                                  |
+| Correction            | Single-select, dropdown | **`"none"`**, **`"border"`**, **`"bord.modif"`**, **`"isotropic"`**, **`"Ripley"`**, **`"translate"`**, **`"translation"`**, **`"rigid"`**, **`"none"`**, **`"good"`** , **`"best"`** , **`"all"`** |
+| Number of Simulations | Number                  | Any number                                                                                                                                                                                          |
+
+## Bi-variate K-function (Eldercare Facilities and Chas Clinics)
+
+Assuming user chooses to view the K-function for eldercare facilities AND chas clinics:
+
+-   spatial unit: planning area
+
+-   area of interest: bukit merah
+
+Data Wrangling before K-function plot
+
+```{r}
+#AOI stands for area of interest
+AOI <- sg_sf %>%
+  filter(PLN_AREA_N == "BUKIT MERAH")
+AOI_owin = as.owin(AOI)
+
+eldercare_sf$type <- "Eldercare"
+eldercare_sf_transformed <- eldercare_sf[, c("geometry", "type")]
+
+chasclinics_sf$type <- "CHAS Clinic"
+chasclinics_sf_transformed <- chasclinics_sf[, c("geometry", "type")]
+
+# Combine eldercare and CHAS clinics into one sf object
+combined_sf <- rbind(eldercare_sf_transformed, chasclinics_sf_transformed)
+
+# Restrict to Bukit Merah (optional: ensure both are within Bukit Merah)
+combined_pg <- st_intersection(combined_sf, pg)
+
+# Convert combined dataset to ppp object
+combined_ppp <- as.ppp(combined_pg)
+
+# Ensure "type" is a factor and set it as marks
+marks(combined_ppp) <- factor(combined_pg$type)
+combined_AOI_ppp <- combined_ppp[AOI_owin]
+```
+
+```{r}
+BIvariate_k_AOI <- Kcross(combined_ppp, i = "Eldercare", j = "CHAS Clinic", correction = "Ripley")
+
+# Plot K(d) - r with additional formatting
+plot(BIvariate_k_AOI, . - r ~ r, ylab= "K(d) - r", xlab = "Distance d (m)",
+     main = "Bi-variate K-function (Eldercare Facilities and Chas Clinics)",
+     legend = TRUE)
+abline(h = 0, col = "gray", lty = 2) # Adds a reference line at zero
+```
+
+Performing Complete Spatial Randomness Test
+
+```{r}
+BIvariate_k_AOI_env <- envelope(combined_AOI_ppp, Kcross, nsim = 99, 
+                                i = "Eldercare", j = "CHAS Clinic",
+                                simulate = expression(rlabel(combined_AOI_ppp)),
+                                savefuns = TRUE)
+```
+
+```{r}
+plot(BIvariate_k_AOI_env, . - r ~ r, 
+     ylab = "K(d) - r", xlab = "Distance d (m)", 
+     main = "Bivariate K-function with Envelope (Eldercare & CHAS Clinics)",
+     legend = TRUE)
+abline(h = 0, col = "gray", lty = 2) # Adds a reference line at zero
+```
+
+### UI Design: Shiny Storyboard
+
+![](images/SPPA (3).png)
+
+**Calibration Parameters for Uni-variate K-function**
+
+| Parameter             | Type                    | Filter Options                                                                                                                              |
+|----------------|----------------|-----------------------------------------|
+| Spatial Unit          | Single-select, dropdown | `region` , `planning area`                                                                                                                  |
+| Area of Interest      | Multi-select, dropdown  | `Overall Singapore` , `specific region` , `specific planning area`                                                                          |
+| Variable              | Multi-select, dropdown  | `All`                                                                                                                                       |
+| Correction            | Single-select, dropdown | **`"border"`**, **`"bord.modif"`**, **`"isotropic"`**, **`"Ripley"`**, **`"translate"`**, **`"translation"`**, **`"none"`** or **`"best"`** |
+| Number of Simulations | Number                  | Any number                                                                                                                                  |
