@@ -201,7 +201,7 @@ tm_shape(sg_sf)+tm_polygons()+tm_shape(chasclinics_sf)+tm_dots()
 **Calibration Parameters**
 
 | Parameter        | Type                    | Filter Options                                                     |
-|---------|---------|------------------------------------------------------|
+|-------------|-------------|-----------------------------------------------|
 | Spatial Unit     | Single Select, dropdown | `region` , `planning area`                                         |
 | Variable         | Multi-select, dropdown  | `All`, `chas clinics, eldercare services`                          |
 | Area of Interest | Multi-select, dropdown  | `Overall Singapore` , `specific region` , `specific planning area` |
@@ -278,17 +278,17 @@ plot(K_AOI.csr, . - r ~ r, xlab="d", ylab="K(d)-r")
 
 ### UI Design: Shiny Storyboard
 
-![](images/SPPA (2).png)
+![](images/SPPA%20(2).png)
 
 **Calibration Parameters for Uni-variate K-function**
 
 | Parameter             | Type                    | Filter Options                                                                                                                                                                                      |
-|--------------|--------------|--------------------------------------------|
+|----------------|----------------|----------------------------------------|
 | Spatial Unit          | Single-select, dropdown | `region` , `planning area`                                                                                                                                                                          |
 | Area of Interest      | Multi-select, dropdown  | `Overall Singapore` , `specific region` , `specific planning area`                                                                                                                                  |
 | Variable              | Multi-select, dropdown  | `chas clinics, eldercare services`                                                                                                                                                                  |
 | Correction            | Single-select, dropdown | **`"none"`**, **`"border"`**, **`"bord.modif"`**, **`"isotropic"`**, **`"Ripley"`**, **`"translate"`**, **`"translation"`**, **`"rigid"`**, **`"none"`**, **`"good"`** , **`"best"`** , **`"all"`** |
-| Number of Simulations | Number                  | Any number                                                                                                                                                                                          |
+| Number of Simulations | Number                  | Number capped at 199 due to long computation time                                                                                                                                                   |
 
 ## Bi-variate K-function (Eldercare Facilities and Chas Clinics)
 
@@ -355,14 +355,14 @@ abline(h = 0, col = "gray", lty = 2) # Adds a reference line at zero
 
 ### UI Design: Shiny Storyboard
 
-![](images/SPPA (3).png)
+![](images/SPPA (5).png)
 
-**Calibration Parameters for Uni-variate K-function**
+**Calibration Parameters for Bi-variate K-function**
 
 | Parameter             | Type                    | Filter Options                                                                                                                              |
-|----------------|----------------|-----------------------------------------|
+|-----------------|-----------------|--------------------------------------|
 | Spatial Unit          | Single-select, dropdown | `region` , `planning area`                                                                                                                  |
 | Area of Interest      | Multi-select, dropdown  | `Overall Singapore` , `specific region` , `specific planning area`                                                                          |
-| Variable              | Multi-select, dropdown  | `All`                                                                                                                                       |
+| Variable              | Multi-select, dropdown  | `All (Eldercare and Chas Clinics)`                                                                                                          |
 | Correction            | Single-select, dropdown | **`"border"`**, **`"bord.modif"`**, **`"isotropic"`**, **`"Ripley"`**, **`"translate"`**, **`"translation"`**, **`"none"`** or **`"best"`** |
-| Number of Simulations | Number                  | Any number                                                                                                                                  |
+| Number of Simulations | Number                  | Number capped at 199 due to long computation time                                                                                           |
