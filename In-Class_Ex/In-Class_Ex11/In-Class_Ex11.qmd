@@ -1,0 +1,71 @@
+---
+title: "In-Class Exercise 11"
+author: "Ooi Wen Xian"
+date: "November 4, 2024"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  freeze: true
+---
+
+# Importing packages and data
+
+```{r}
+pacman::p_load(tidyverse, sf, tmap, httr, performance)
+```
+
+```{r}
+folder_path <- "data/aspatial"
+file_list <- list.files(path = folder_path, pattern = "^realis.*\\csv$", 
+                        full.names = TRUE)
+realis_data <- file_list %>%
+  map_dfr(read_csv)
+```
+
+Need to change to an appropriate date field.
+
+# Data Wrangling
+
+```{r}
+condo_resale <- realis_data %>%
+  mutate("Sale Date" = dmy(`Sale Date`)) %>%
+  filter(`Type of Sale` == 'Resale' & `Property Type` == "Condominium")
+```
+
+```{r}
+postcode <- unique(condo_resale$'Postal Code')
+url <- "https://onemap.gov.sg/api/common/elastic/search"
+found <- data.frame()
+not_found <- data.frame()
+for (postcode in postcode) {
+  query <- list('searchVal'=postcode, 'returnGeom'='Y', 'getAddrDetails'='Y', 'pageNum'='1')
+  res <- GET(url, query=query)
+  if ((content(res)$found)!=0){
+    found <- rbind(found, data.frame(content(res))[4:13])
+  } else {not_found = data.frame(postcode)}
+}
+```
+
+```{r}
+found <- found %>% select(c(6:8)) %>%
+  rename(POSTAL = `results.POSTAL`,
+         XCOORD = `results.X`,
+         YCOORD = `results.Y`)
+```
+
+```{r}
+condo_rescale_geocoded = left_join(condo_resale, found, by = c('Postal Code' = 'POSTAL'))
+```
+
+```{r}
+condo_resale_sf <- st_as_sf(condo_rescale_geocoded, coords = c("XCOORD", "YCOORD"))
+```
+
+```{r}
+overlapping_points <- condo_resale_sf %>% mutate(overlap=length(st_equals(.,.))>1)
+```
+
+```{r}
+condo_resale_sf <- condo_resale_sf %>% st_jitter(amount=2)
+```
